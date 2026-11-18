@@ -1,7 +1,7 @@
 import { crossSiteBlocked } from "@/lib/csrf";
 import { NextResponse } from "next/server";
 import { createSession, destroySession, getSession } from "@/lib/auth";
-import { blockedByFailures, clientIp, fail } from "@/lib/rate-limit";
+import { claimAttempt, clientIp, refund } from "@/lib/rate-limit";
 import { authenticateAdmin } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
@@ -32,15 +32,14 @@ export async function POST(request: Request) {
     { key: `staff-login:email:${email}`, limit: 5, windowSeconds: 900 },
     { key: `staff-login:ip:${clientIp(request)}`, limit: 20, windowSeconds: 900 },
   ];
-  const blocked = await blockedByFailures(rules);
+  // Claimed before the password check (atomic), given back on success.
+  const blocked = await claimAttempt(rules);
   if (blocked) return blocked;
 
   try {
     const admin = await authenticateAdmin(email, password);
-    if (!admin) {
-      await fail(rules);
-      return NextResponse.json({ error: "Wrong email or password" }, { status: 401 });
-    }
+    if (!admin) return NextResponse.json({ error: "Wrong email or password" }, { status: 401 });
+    await refund(rules);
     await createSession(admin);
     return NextResponse.json({ admin });
   } catch (error) {

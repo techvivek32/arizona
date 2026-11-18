@@ -5,6 +5,7 @@
 import { cleanPhone, phoneCountries, phoneHref } from "@/lib/phone";
 import { selfPayLine } from "@/lib/site";
 import { isEmailAddress } from "@/lib/email-address";
+import { sessionSecret } from "@/lib/secret";
 import { googleTagAllowedOn, reportBookingConversion } from "@/components/analytics/google";
 import { isPrivateLocation } from "@/components/analytics/track";
 import assert from "node:assert/strict";
@@ -168,6 +169,22 @@ describe("insurance picker", () => {
     assert.deepEqual(plansFor("Velocity"), ["Auto", "PPO", "Workers Comp"]);
     assert.equal(acceptedNetworks.length, 11);
     assert.equal(new Set(carriers.map((carrier) => carrier.name)).size, carriers.length, "no carrier twice");
+  });
+});
+
+describe("SESSION_SECRET", () => {
+  it("refuses short, example and predictable values; accepts a random one", () => {
+    const saved = process.env.SESSION_SECRET;
+    try {
+      for (const bad of ["short", "change-me-to-a-long-random-string", "a".repeat(64), "abababababababababababababababab12"]) {
+        process.env.SESSION_SECRET = bad;
+        assert.throws(() => sessionSecret(), Error, bad);
+      }
+      process.env.SESSION_SECRET = "9f3c1e7a5b2d4f608e1c3a5b7d9f0e2c4a6b8d0f1e3c5a7b9d1f3e5c7a9b0d2f";
+      assert.equal(sessionSecret(), process.env.SESSION_SECRET);
+    } finally {
+      process.env.SESSION_SECRET = saved;
+    }
   });
 });
 

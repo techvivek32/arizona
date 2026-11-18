@@ -1,3 +1,4 @@
+import { sessionSecret } from "./secret";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -9,13 +10,8 @@ const USER_COOKIE = "aws_user";
 const MAX_AGE = 60 * 60 * 8; // 8 hours
 const USER_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 
-function secret(): string {
-  const value = process.env.SESSION_SECRET;
-  if (!value) throw new Error("SESSION_SECRET is not set.");
-  // It signs every session and appointment link: a short one can be guessed.
-  if (value.length < 32) throw new Error("SESSION_SECRET must be at least 32 characters.");
-  return value;
-}
+// It signs every session and appointment link: see lib/secret.ts.
+const secret = sessionSecret;
 
 function sign(payload: string): string {
   return createHmac("sha256", secret()).update(payload).digest("hex");

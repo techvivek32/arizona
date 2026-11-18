@@ -1,3 +1,4 @@
+import { sessionSecret } from "./secret";
 import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import { ObjectId } from "mongodb";
 import { cookies } from "next/headers";
@@ -16,11 +17,7 @@ async function otps() {
   return db.collection<EmailOtpDoc>("email_otps");
 }
 
-function secret(): string {
-  const value = process.env.SESSION_SECRET;
-  if (!value) throw new Error("SESSION_SECRET is not set.");
-  return value;
-}
+const secret = sessionSecret;
 
 /** Codes are stored only as an HMAC, under their own derived key. */
 function hash(email: string, code: string): string {

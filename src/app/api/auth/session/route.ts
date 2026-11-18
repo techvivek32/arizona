@@ -1,7 +1,7 @@
 import { crossSiteBlocked } from "@/lib/csrf";
 import { NextResponse } from "next/server";
 import { createSession, createUserSession, destroyUserSession, getCurrentUser, panelHome } from "@/lib/auth";
-import { blockedByFailures, clientIp, fail } from "@/lib/rate-limit";
+import { claimAttempt, clientIp, refund } from "@/lib/rate-limit";
 import { authenticateAdmin, authenticateUser, staffAccountExists } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
@@ -49,29 +49,29 @@ export async function POST(request: Request) {
     { key: `staff-login:email:${email}`, limit: 5, windowSeconds: 900 },
     { key: `staff-login:ip:${clientIp(request)}`, limit: 20, windowSeconds: 900 },
   ];
-  const blocked = await blockedByFailures(rules);
+  // Each attempt is claimed before the password is checked (atomic), and
+  // given back when it succeeds — see claimAttempt.
+  const blocked = await claimAttempt(rules);
   if (blocked) return blocked;
 
   try {
     if (await staffAccountExists(email)) {
-      const staffBlocked = await blockedByFailures(staffRules);
+      const staffBlocked = await claimAttempt(staffRules);
       if (staffBlocked) return staffBlocked;
       const admin = await authenticateAdmin(email, password);
       if (admin) {
+        await refund([...rules, ...staffRules]);
         await createSession(admin);
         return NextResponse.json({
           staff: { role: admin.role },
           redirect: panelHome(admin.role),
         });
       }
-      await fail(staffRules);
     }
 
     const user = await authenticateUser(email, password);
-    if (!user) {
-      await fail(rules);
-      return NextResponse.json({ error: "Wrong email or password" }, { status: 401 });
-    }
+    if (!user) return NextResponse.json({ error: "Wrong email or password" }, { status: 401 });
+    await refund(rules);
     await createUserSession(user);
     return NextResponse.json({ user });
   } catch (error) {

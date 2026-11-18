@@ -1,3 +1,4 @@
+import { sessionSecret } from "./secret";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 /**
@@ -11,11 +12,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  * detail beyond what the patient entered.
  */
 
-function secret(): string {
-  const value = process.env.SESSION_SECRET;
-  if (!value) throw new Error("SESSION_SECRET is not set.");
-  return value;
-}
+const secret = sessionSecret;
 
 function sign(bookingId: string): string {
   return createHmac("sha256", `${secret()}:manage-appointment`)

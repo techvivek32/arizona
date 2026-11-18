@@ -41,10 +41,37 @@ export async function run({ call, check, db, mailDir, admin, doctor, root }) {
     check("operator injection in login → 400", inj.status === 400, `${inj.status}`);
   }
   {
+    // A burst of wrong passwords at the same moment: each attempt is claimed
+    // before the password is checked, so no more than the limit (10) get through.
+    const email = `burst.${Date.now()}@example.com`;
+    const burst = await Promise.all(
+      Array.from({ length: 14 }, () => call(jar(), "POST", "/api/auth/session", { email, password: "wrong-password" })),
+    );
+    const statuses = burst.map((r) => r.status);
+    check(
+      "14 wrong logins at the same moment: only 10 get a password check, the rest 429",
+      statuses.filter((code) => code === 401).length === 10 && statuses.filter((code) => code === 429).length === 4,
+      statuses.join(","),
+    );
+    // Every test request shares one IP here; leave the other suites their allowance.
+    await db.collection("rate_limits").deleteMany({ _id: { $in: [`login:email:${email}`, "login:ip:direct"] } });
+  }
+  {
     const before = Date.now();
     const res = await call(jar(), "POST", "/api/auth/otp", { email: "valeria.reyes@example.com" });
     const mail = await codeFor(mailDir, "valeria.reyes@example.com", before);
     check("registering an existing email: same answer, owner emailed", res.status === 200 && /already (have|has) an account/i.test(mail.body));
+    // Asking again at once must look the same for a patient and a stranger,
+    // or the difference would tell who is a patient here.
+    const again = await call(jar(), "POST", "/api/auth/otp", { email: "valeria.reyes@example.com" });
+    const stranger = `nobody.${Date.now()}@example.com`;
+    await call(jar(), "POST", "/api/auth/otp", { email: stranger });
+    const strangerAgain = await call(jar(), "POST", "/api/auth/otp", { email: stranger });
+    check(
+      "…and asking again at once looks the same as for an unknown address (429 both)",
+      again.status === 429 && strangerAgain.status === 429,
+      `${again.status} vs ${strangerAgain.status}`,
+    );
   }
   {
     const email = `bind.${Date.now()}@example.com`;

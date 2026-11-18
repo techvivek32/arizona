@@ -42,16 +42,17 @@ export async function POST(request: Request) {
   const lang = isLang(body.lang) ? body.lang : "en";
 
   try {
-    // Same answer whether or not the address has an account: telling the page
-    // would let anyone check who is a patient here. The owner gets an email.
+    // Same answer — and the same per-address limit — whether or not the
+    // address has an account: otherwise two quick requests (one answered
+    // "sent", the next "wait 45 seconds" only for new addresses) would tell
+    // anyone who is a patient here. The owner gets an email instead of a code.
+    const code = await issueCode(email);
     if (!forBooking && (await emailTaken(email))) {
       await sendMail({ to: email, ...accountExistsEmail() }).catch((error) =>
         console.error("Could not send the account-exists email", (error as Error).message),
       );
       return NextResponse.json({ sent: true });
     }
-
-    const code = await issueCode(email);
 
     try {
       await sendMail({ to: email, ...(forBooking ? bookingCodeEmail(code, lang) : otpEmail(code)) });

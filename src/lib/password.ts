@@ -18,15 +18,37 @@ const P = 1;
 const KEYLEN = 64;
 const MAXMEM = 256 * 1024 * 1024;
 
+/**
+ * Each hash takes ~128 MB, so only a few run at once per server; the rest
+ * wait their turn. A flood of sign-in attempts then queues instead of
+ * exhausting memory.
+ */
+const MAX_PARALLEL = 4;
+let running = 0;
+const waiting: (() => void)[] = [];
+
+async function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
+  if (running >= MAX_PARALLEL) await new Promise<void>((resolve) => waiting.push(resolve));
+  running += 1;
+  try {
+    return await work();
+  } finally {
+    running -= 1;
+    waiting.shift()?.();
+  }
+}
+
 /** Returns `scrypt$N$r$p$salt$hash`, all base64url. Salt is per-password. */
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16);
-  const key = await scryptAsync(password.normalize("NFKC"), salt, KEYLEN, {
-    N,
-    r: R,
-    p: P,
-    maxmem: MAXMEM,
-  });
+  const key = await oneAtATime(() =>
+    scryptAsync(password.normalize("NFKC"), salt, KEYLEN, {
+      N,
+      r: R,
+      p: P,
+      maxmem: MAXMEM,
+    }),
+  );
   return [
     "scrypt",
     N,
@@ -55,12 +77,14 @@ export async function verifyPassword(password: string, stored: string): Promise<
   const expected = Buffer.from(keyPart, "base64url");
 
   try {
-    const actual = await scryptAsync(password.normalize("NFKC"), salt, expected.length, {
-      N: Number(n),
-      r: Number(r),
-      p: Number(p),
-      maxmem: MAXMEM,
-    });
+    const actual = await oneAtATime(() =>
+      scryptAsync(password.normalize("NFKC"), salt, expected.length, {
+        N: Number(n),
+        r: Number(r),
+        p: Number(p),
+        maxmem: MAXMEM,
+      }),
+    );
     return actual.length === expected.length && timingSafeEqual(actual, expected);
   } catch {
     return false;

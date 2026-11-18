@@ -99,6 +99,30 @@ export async function blockedByFailures(
   return null;
 }
 
+/**
+ * Claims one attempt against each rule *before* the slow password check, so
+ * a burst of parallel requests can't all pass a check-then-count and exceed
+ * the limit. A successful sign-in gives its attempt back with refund(), so
+ * only wrong passwords use up the allowance.
+ */
+export async function claimAttempt(
+  rules: Rule[],
+  message = "Too many wrong tries — please wait a few minutes and try again.",
+): Promise<NextResponse | null> {
+  const results = await Promise.all(rules.map((rule) => hit(rule.key, rule.limit, rule.windowSeconds)));
+  const blocked = results.find((result) => !result.ok);
+  return blocked ? tooMany(blocked.retryInSeconds, message) : null;
+}
+
+/** Gives back an attempt claimed by claimAttempt (the sign-in worked). */
+export async function refund(rules: Rule[]): Promise<void> {
+  await ensureIndexes();
+  const db = await getDb();
+  await db
+    .collection<RateDoc>("rate_limits")
+    .updateMany({ _id: { $in: rules.map((rule) => rule.key) }, count: { $gt: 0 } }, { $inc: { count: -1 } });
+}
+
 /** Records one failed attempt against each rule. */
 export async function fail(rules: Rule[]): Promise<void> {
   await Promise.all(rules.map((rule) => hit(rule.key, rule.limit, rule.windowSeconds)));
