@@ -846,6 +846,16 @@ export async function getUserById(id: string): Promise<User | null> {
  * booking is deleted. (Deleting does free the seat, as it always has.)
  */
 const LIVE_BOOKING: Filter<BookingDoc> = { archivedAt: null, purgedAt: null };
+
+/**
+ * Gives one seat back. Every caller first wins an atomic update that proves
+ * this booking held the seat; the floor at zero is a last guard so a count
+ * can never go negative (which would let a time be overbooked).
+ */
+async function releaseSeat(slotId: ObjectId): Promise<void> {
+  const { slots } = await collections();
+  await slots.updateOne({ _id: slotId, booked: { $gt: 0 } }, { $inc: { booked: -1 } });
+}
 const ARCHIVED_BOOKING: Filter<BookingDoc> = { archivedAt: { $ne: null }, purgedAt: null };
 
 /** Attaches bookings made while signed out to the account with that email. */
@@ -917,14 +927,16 @@ export async function cancelBookingById(bookingId: string): Promise<CancelResult
 export type CancelResult = { booking: Booking; changed: boolean };
 
 async function cancelBookingDoc(doc: BookingDoc): Promise<CancelResult | null> {
-  const { slots, bookings } = await collections();
+  const { bookings } = await collections();
   if (doc.status === "cancelled") return { booking: serializeBooking(doc), changed: false };
   if (hasStarted(doc)) throw new BookingInPastError();
 
   // Only the request that actually flips confirmed -> cancelled frees the
   // seat, so a double-click or two tabs can't release it twice.
+  // Archiving also frees the seat, so the booking must still be in use here:
+  // a cancel and an archive racing can't both give it back.
   const updated = await bookings.findOneAndUpdate(
-    { _id: doc._id, status: "confirmed" },
+    { _id: doc._id, status: "confirmed", ...LIVE_BOOKING },
     { $set: { status: "cancelled" } },
     { returnDocument: "after" },
   );
@@ -933,7 +945,7 @@ async function cancelBookingDoc(doc: BookingDoc): Promise<CancelResult | null> {
     return current ? { booking: serializeBooking(current), changed: false } : null;
   }
 
-  await slots.updateOne({ _id: doc.slotId }, { $inc: { booked: -1 } });
+  await releaseSeat(doc.slotId);
   return { booking: serializeBooking(updated), changed: true };
 }
 
@@ -1822,6 +1834,12 @@ export async function createBooking(input: NewBooking): Promise<Booking> {
   );
 
   if (!slot) throw new SlotUnavailableError();
+  // An old slot id must not book a time that has passed. Staff may still book
+  // a walk-in into today's slot that has just started.
+  if (input.via === "staff" ? slot.date < arizonaTodayIso() : hasStarted(slot)) {
+    await releaseSeat(slot._id);
+    throw new SlotUnavailableError();
+  }
 
   const doc: BookingDoc = {
     _id: new ObjectId(),
@@ -1844,7 +1862,7 @@ export async function createBooking(input: NewBooking): Promise<Booking> {
   try {
     await bookings.insertOne(doc);
   } catch (error) {
-    await slots.updateOne({ _id: slot._id }, { $inc: { booked: -1 } });
+    await releaseSeat(slot._id);
     throw error;
   }
 
@@ -2056,7 +2074,7 @@ export async function countUpcomingBookings(email: string): Promise<number> {
 /** The account that owns this email, if any — guest bookings attach to it. */
 export async function userIdByEmail(email: string): Promise<string | null> {
   const { users } = await collections();
-  const doc = await users.findOne({ email: email.trim().toLowerCase() }, { projection: { _id: 1 } });
+  const doc = await users.findOne({ email: email.trim().toLowerCase(), archivedAt: null }, { projection: { _id: 1 } });
   return doc ? doc._id.toString() : null;
 }
 
@@ -2123,12 +2141,12 @@ export async function setBookingStatus(
     // Only the request that flips confirmed -> cancelled frees the seat, so a
     // double-click or two admins can't release it twice.
     const doc = await bookings.findOneAndUpdate(
-      { _id, status: "confirmed" },
+      { _id, status: "confirmed", ...LIVE_BOOKING },
       { $set: { status } },
       { returnDocument: "after" },
     );
     if (!doc) return serializeBooking((await bookings.findOne({ _id })) ?? existing);
-    await slots.updateOne({ _id: doc.slotId }, { $inc: { booked: -1 } });
+    await releaseSeat(doc.slotId);
     return serializeBooking(doc);
   }
 
@@ -2139,13 +2157,13 @@ export async function setBookingStatus(
   );
   if (!seat) throw new SlotUnavailableError();
   const doc = await bookings.findOneAndUpdate(
-    { _id, status: "cancelled" },
+    { _id, status: "cancelled", ...LIVE_BOOKING },
     { $set: { status } },
     { returnDocument: "after" },
   );
   if (!doc) {
     // Someone else changed it meanwhile — give the seat back.
-    await slots.updateOne({ _id: existing.slotId }, { $inc: { booked: -1 } });
+    await releaseSeat(existing.slotId);
     return serializeBooking((await bookings.findOne({ _id })) ?? existing);
   }
   return serializeBooking(doc);
@@ -2163,14 +2181,14 @@ async function archiveBookingDoc(
   by: string,
   withUser: ObjectId | null = null,
 ): Promise<{ archived: boolean; freed: boolean }> {
-  const { bookings, slots } = await collections();
+  const { bookings } = await collections();
   const doc = await bookings.findOneAndUpdate(
     { _id, ...LIVE_BOOKING },
     { $set: { archivedAt: new Date(), archivedBy: by, archivedWithUser: withUser } },
   );
   if (!doc) return { archived: false, freed: false };
   if (doc.status !== "confirmed") return { archived: true, freed: false };
-  await slots.updateOne({ _id: doc.slotId }, { $inc: { booked: -1 } });
+  await releaseSeat(doc.slotId);
   return { archived: true, freed: true };
 }
 
@@ -2203,7 +2221,7 @@ async function restoreBookingDoc(doc: BookingDoc): Promise<boolean> {
   );
   if (done.modifiedCount !== 1 && doc.status === "confirmed") {
     // Restored or deleted meanwhile by someone else — give the seat back.
-    await slots.updateOne({ _id: doc.slotId }, { $inc: { booked: -1 } });
+    await releaseSeat(doc.slotId);
   }
   return done.modifiedCount === 1;
 }
@@ -2259,19 +2277,13 @@ export async function restoreBookings(ids: string[]): Promise<{ restored: string
  * how it was booked, whether it had insurance or a check-in), so its numbers
  * don't change. The record then no longer appears anywhere but those counts.
  */
-async function purgeBookingDoc(doc: BookingDoc): Promise<void> {
-  const { bookings, slots } = await collections();
-  // Archived bookings gave their seat back already; a live one (a patient's
-  // booking restored on its own) gives it back now.
-  if (!doc.archivedAt && doc.status === "confirmed") {
-    await slots.updateOne({ _id: doc.slotId }, { $inc: { booked: -1 } });
-  }
-  const photos = [doc.intake?.cardFrontId, doc.intake?.cardBackId, doc.intake?.photoIdId];
-  await Promise.all(photos.map((photoId) => deletePhoto(photoId ?? null)));
-  const db = await getDb();
-  await db.collection("patient_emails").deleteMany({ bookingId: doc._id });
-  await bookings.updateOne(
-    { _id: doc._id, purgedAt: null },
+async function purgeBookingDoc(doc: BookingDoc): Promise<boolean> {
+  const { bookings } = await collections();
+  // Only an archived booking (whose seat was already given back) is erased,
+  // and the erase is claimed first: if a restore wins the race, nothing is
+  // deleted, and two purges can't both run.
+  const before = await bookings.findOneAndUpdate(
+    { _id: doc._id, ...ARCHIVED_BOOKING },
     {
       $set: {
         purgedAt: new Date(),
@@ -2284,14 +2296,21 @@ async function purgeBookingDoc(doc: BookingDoc): Promise<void> {
       },
     },
   );
+  if (!before) return false;
+  const photos = [before.intake?.cardFrontId, before.intake?.cardBackId, before.intake?.photoIdId];
+  await Promise.all(photos.map((photoId) => deletePhoto(photoId ?? null)));
+  const db = await getDb();
+  await db.collection("patient_emails").deleteMany({ bookingId: before._id });
+  return true;
 }
 
 /** Only archived bookings can be deleted for good. Returns how many were. */
 export async function purgeBookings(ids: string[]): Promise<number> {
   const { bookings } = await collections();
   const docs = await bookings.find({ _id: { $in: objectIds(ids) }, ...ARCHIVED_BOOKING }).toArray();
-  for (const doc of docs) await purgeBookingDoc(doc);
-  return docs.length;
+  let purged = 0;
+  for (const doc of docs) if (await purgeBookingDoc(doc)) purged += 1;
+  return purged;
 }
 
 /**
@@ -2325,16 +2344,14 @@ export async function purgeUsers(ids: string[]): Promise<string[]> {
   for (const user of docs) {
     const owned = await bookings
       .find({
-        purgedAt: null,
-        $or: [
-          { userId: user._id },
-          { archivedWithUser: user._id },
-          // A guest booking under the same email made after the archive is someone's live visit — kept.
-          { "patient.email": user.email, archivedAt: { $ne: null } },
-        ],
+        ...ARCHIVED_BOOKING,
+        $or: [{ userId: user._id }, { archivedWithUser: user._id }, { "patient.email": user.email }],
       })
       .toArray();
     for (const doc of owned) await purgeBookingDoc(doc);
+    // Bookings still in use are real visits (a guest booking under the same
+    // email, or one restored on its own): kept, just no longer tied to the account.
+    await bookings.updateMany({ ...LIVE_BOOKING, userId: user._id }, { $set: { userId: null } });
     await db.collection("email_otps").deleteMany({ email: user.email });
     await users.deleteOne({ _id: user._id });
   }

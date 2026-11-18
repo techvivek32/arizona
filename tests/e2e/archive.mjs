@@ -1,7 +1,8 @@
 // Admin → Archive: deleting a booking or a patient archives it and frees the
 // time; restore it (if the time is still free), or delete it for good. The
 // dashboard's booking counts never move — only "Open times" does.
-import { arizonaToday, jar, manageToken } from "./lib.mjs";
+import { ObjectId } from "mongodb";
+import { addDays, arizonaToday, jar, manageToken, mondayOf } from "./lib.mjs";
 
 /** The dashboard's booking counts (Today, Next 7 days, Visits · last 30 days) — not "Open times". */
 async function kpis(call, A) {
@@ -110,14 +111,61 @@ export async function run({ call, check, db, admin, doctor }) {
     (await bookings.countDocuments({ archivedAt: null, purgedAt: null, $or: [{ userId: user._id }, { "patient.email": user.email }] })) === theirs);
 
   await call(A, "DELETE", `/api/admin/users/${userId}`);
+
+  // While they're archived, the office books a visit under the same email.
+  const day = addDays(mondayOf(arizonaToday()), 28);
+  await call(A, "POST", "/api/admin/slots", { providerId: "denton", officeId: "maryvale", dates: [day], times: ["7:15 am"] });
+  const open = (await call(null, "GET", `/api/availability?start=${day}&days=1&provider=denton`)).data.days[0].slots.find(
+    (item) => item.time === "7:15 am" && item.providerId === "denton",
+  );
+  const later = await call(A, "POST", "/api/doctor/bookings", {
+    slotId: open?.id,
+    reason: "OB-GYN Consultation",
+    patient: { email: user.email, firstName: "Later", lastName: "Visit", dob: "1990-01-01", sex: "Female", phone: "(623) 555-0177" },
+  });
+  check(
+    "a new booking under an archived patient's email isn't tied to the archived account",
+    later.status === 201 && later.data.booking.userId === null,
+    later.text.slice(0, 160),
+  );
+
   const erase = await call(A, "POST", "/api/admin/archive", { kind: "patients", action: "delete", ids: [userId] });
   check("Delete patient permanently removes the account", erase.status === 200 && erase.data.count === 1 && !(await db.collection("users").findOne({ _id: user._id })));
   check(
     "…erases their bookings' details and their chats",
-    (await bookings.countDocuments({ purgedAt: null, $or: [{ userId: user._id }, { "patient.email": user.email }] })) === 0 &&
+    // (Except the visit booked after the archive — checked just below.)
+    (await bookings.countDocuments({
+      purgedAt: null,
+      _id: { $ne: later.data?.booking ? new ObjectId(later.data.booking.id) : null },
+      $or: [{ userId: user._id }, { "patient.email": user.email }],
+    })) === 0 &&
       (await db.collection("chat_conversations").countDocuments({ userId: user._id })) === 0,
   );
   check("…and the dashboard's booking counts are still the same", (await kpis(call, A)) === before, await kpis(call, A));
+  const kept = later.data?.booking ? await bookings.findOne({ _id: new ObjectId(later.data.booking.id) }) : null;
+  check("…while the visit booked after the archive is kept, untouched", Boolean(kept) && !kept.purgedAt && !kept.archivedAt && kept.patient.firstName === "Later");
+
+  // ---------------------------------------------------------------- races --
+  // (After the dashboard checks: a cancel here changes the counts on purpose.)
+  const race = await bookings.findOne(
+    { status: "confirmed", archivedAt: null, purgedAt: null, date: { $gt: arizonaToday() }, "patient.email": { $ne: user.email } },
+    { sort: { date: 1 } },
+  );
+  const raceSeats = async () => (await db.collection("slots").findOne({ _id: race.slotId })).booked;
+  const seats0 = await raceSeats();
+  await Promise.all([
+    call(A, "DELETE", `/api/admin/bookings/${race._id}`),
+    call(A, "PATCH", `/api/admin/bookings/${race._id}`, { status: "cancelled" }),
+  ]);
+  check("archive and cancel at the same moment give the seat back only once", (await raceSeats()) === seats0 - 1, `${seats0} → ${await raceSeats()}`);
+  if (!(await bookings.findOne({ _id: race._id })).archivedAt) await call(A, "DELETE", `/api/admin/bookings/${race._id}`);
+  const twice = await Promise.all(
+    [1, 2].map(() => call(A, "POST", "/api/admin/archive", { kind: "bookings", action: "delete", ids: [race._id.toString()] })),
+  );
+  check(
+    "two permanent deletes at the same moment count once, and leave the seat alone",
+    twice.reduce((n, r) => n + (r.data?.count ?? 0), 0) === 1 && (await raceSeats()) === seats0 - 1,
+  );
 
   // ------------------------------------------------------------- who can --
   const D = jar();
