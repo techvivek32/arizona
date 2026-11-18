@@ -7,6 +7,7 @@ import DeleteUserButton from "@/components/admin/DeleteUserButton";
 import { initialsOf, shortDate } from "@/lib/format";
 import { formatShort } from "@/lib/availability";
 import { getUserDetail } from "@/lib/repo";
+import { arizonaTodayIso } from "@/lib/scheduling";
 
 export const metadata: Metadata = { title: "Patient — Admin" };
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export default async function UserDetailPage({
 
   const { user, bookings } = detail;
   const next = bookings.find(
-    (booking) => booking.status === "confirmed" && booking.date >= new Date().toISOString().slice(0, 10),
+    (booking) => booking.status === "confirmed" && booking.date >= arizonaTodayIso(),
   );
 
   return (

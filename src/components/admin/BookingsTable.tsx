@@ -8,7 +8,7 @@ import { useMemo, useState } from "react";
 import type { Booking } from "@/lib/models";
 import { formatShort } from "@/lib/availability";
 import { getOffices } from "@/lib/site-content";
-import { officeById, shortProviderName } from "@/lib/scheduling";
+import { arizonaTodayIso, officeById, shortProviderName } from "@/lib/scheduling";
 import BookForPatient from "./BookForPatient";
 import { FIELD, Notice, StatusBadge } from "./ui";
 
@@ -25,7 +25,7 @@ export default function BookingsTable({ initial }: { initial: Booking[] }) {
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
 
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = arizonaTodayIso();
 
   const rows = useMemo(() => {
     const term = query.trim().toLowerCase();

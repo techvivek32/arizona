@@ -5,12 +5,11 @@ import ProfilePanel from "@/components/ProfilePanel";
 import ProviderSlots from "@/components/ProviderSlots";
 import { BookingProvider, type Reschedule } from "@/components/booking-context";
 import { LangProvider, LanguageToggle } from "@/components/lang-context";
-import { toIso } from "@/lib/availability";
 import { shortDate, t } from "@/lib/i18n";
 import { getLang } from "@/lib/lang-server";
 import { practice } from "@/lib/practice";
 import { getBookingByToken, getOfficeHours, getProviderReasons, hasStarted } from "@/lib/repo";
-import { isOfficeId, isProviderId, officeById, shortProviderName } from "@/lib/scheduling";
+import { arizonaTodayIso, isOfficeId, isProviderId, officeById, shortProviderName } from "@/lib/scheduling";
 
 export const metadata: Metadata = {
   title: `Book an appointment — ${practice.name}`,
@@ -40,7 +39,8 @@ export default async function BookPage({
     getProviderReasons().catch(() => ({})),
   ]);
   const tr = t(lang);
-  const todayIso = toIso(new Date());
+  // The practice's date, not the server's (UTC is a day ahead after 5 pm in Arizona).
+  const todayIso = arizonaTodayIso();
 
   // "Book again" / "Reschedule" links pre-select the provider and office.
   const search = await searchParams;

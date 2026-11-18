@@ -9,7 +9,7 @@ import { DateInput } from "@/components/form-fields";
 import { formatShort, type DayAvailability } from "@/lib/availability";
 import type { Booking } from "@/lib/models";
 import { carriers, plansFor, visitReasons } from "@/lib/practice";
-import { officeById, shortProviderName, type ProviderId } from "@/lib/scheduling";
+import { arizonaTodayIso, officeById, type ProviderId, shortProviderName } from "@/lib/scheduling";
 import { BTN_PRIMARY, BTN_QUIET, FIELD, LABEL, Notice } from "./ui";
 
 const REASONS = [...visitReasons.popular, ...visitReasons.all];
@@ -321,7 +321,7 @@ export default function BookForPatient({
                   id="bp-dob"
                   required
                   min="1900-01-01"
-                  max={new Date().toISOString().slice(0, 10)}
+                  max={arizonaTodayIso()}
                   value={form.dob}
                   onChange={(event) => set("dob", event.target.value)}
                   className={FIELD}

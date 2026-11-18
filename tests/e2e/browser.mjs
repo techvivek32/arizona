@@ -15,7 +15,7 @@ const CHROME_CANDIDATES = [
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 ].filter(Boolean);
 
-export async function run({ check, base }) {
+export async function run({ check, base, db }) {
   const chromePath = CHROME_CANDIDATES.find((candidate) => fs.existsSync(candidate));
   console.log("\n# Browser");
   if (!chromePath) {
@@ -41,6 +41,7 @@ export async function run({ check, base }) {
     const pending = new Map();
     const errors = [];
     const facebook = [];
+    const chatPolls = [];
     ws.addEventListener("message", (message) => {
       const event = JSON.parse(message.data);
       if (event.id && pending.has(event.id)) {
@@ -55,6 +56,8 @@ export async function run({ check, base }) {
         if (/Content Security Policy|Refused to/i.test(text)) errors.push(`CSP: ${text.slice(0, 200)}`);
       } else if (event.method === "Network.requestWillBeSent" && /facebook|fbcdn/.test(event.params.request.url)) {
         facebook.push(event.params.request.url);
+      } else if (event.method === "Network.requestWillBeSent" && /\/api\/my\/chats\/[a-f\d]{24}(\?|$)/.test(event.params.request.url)) {
+        chatPolls.push(event.params.request.url);
       }
     });
     const send = (method, params = {}) =>
@@ -104,6 +107,26 @@ export async function run({ check, base }) {
     await send("Page.navigate", { url: `${base}/about#book-denton` });
     await sleep(5000);
     check("phone: the booking popup fits", !(await js("document.documentElement.scrollWidth > innerWidth + 1")));
+
+    // Chat: after the first load, every poll asks only for what's new.
+    await send("Emulation.setDeviceMetricsOverride", { width: 1366, height: 900, deviceScaleFactor: 1, mobile: false });
+    await send("Page.navigate", { url: `${base}/` });
+    await sleep(2500);
+    // (Earlier suites change some demo passwords, so take one that still signs in.)
+    let signedIn = 0;
+    for (const demo of await db.collection("users").find({ demo: true }, { projection: { email: 1 }, sort: { _id: -1 }, limit: 8 }).toArray()) {
+      signedIn = await js(
+        `fetch("/api/auth/session", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: ${JSON.stringify(demo.email)}, password: "Demo@2026" }) }).then((r) => r.status)`,
+      );
+      if (signedIn === 200) break;
+    }
+    await send("Page.navigate", { url: `${base}/my-bookings/messages?provider=denton` });
+    await sleep(11000);
+    check(
+      "chat polls fetch only new messages after the first load (?after=…)",
+      signedIn === 200 && chatPolls.length >= 3 && !/after=/.test(chatPolls[0]) && chatPolls.slice(1).every((url) => /after=/.test(url)),
+      `${signedIn} · ${chatPolls.length} polls · ${chatPolls.slice(0, 3).map((url) => url.replace(/^.*\/api\/my\/chats\/[a-f\d]+/, "")).join(" ")}`,
+    );
 
     check("no Meta requests at all", facebook.length === 0, `${facebook.length}`);
     check("no JS errors or CSP violations", errors.length === 0, errors.join(" | "));

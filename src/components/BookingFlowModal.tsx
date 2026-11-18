@@ -10,7 +10,7 @@ import ProviderAvatar from "@/components/site/ProviderAvatar";
 import type { DayAvailability, DaySlot } from "@/lib/availability";
 import { dateBadge, longDate, reasonLabel, shortDate } from "@/lib/i18n";
 import { ALL_VISIT_REASONS, BOOKING_SEX, insuranceLabel, practice, reasonFor } from "@/lib/practice";
-import { mondayOf, officeById, providerById, shortProviderName } from "@/lib/scheduling";
+import { arizonaTodayIso, mondayOf, officeById, providerById, shortProviderName } from "@/lib/scheduling";
 import { getOffices } from "@/lib/site-content";
 import { newEventId, track } from "./analytics/track";
 import { useSession } from "./auth/session-context";
@@ -961,7 +961,7 @@ function AboutYouStep({
                 required
                 autoComplete="bday"
                 min="1900-01-01"
-                max={new Date().toISOString().slice(0, 10)}
+                max={arizonaTodayIso()}
                 value={form.dob}
                 onChange={(event) => setForm({ ...form, dob: event.target.value })}
                 className={FIELD}

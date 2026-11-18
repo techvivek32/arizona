@@ -29,7 +29,6 @@ import {
 import {
   addDays,
   fromIso,
-  toIso,
   type DayAvailability,
   type DaySlot,
 } from "./availability";
@@ -661,7 +660,7 @@ export type UserRow = User & {
 
 export async function listUserRows(): Promise<UserRow[]> {
   const { users } = await collections();
-  const todayIso = toIso(new Date());
+  const todayIso = arizonaTodayIso();
 
   const rows = await users
     .aggregate<UserRow & { _id: ObjectId }>([
@@ -740,7 +739,7 @@ export async function getUserDetail(
 
   // An archived patient's page shows the bookings archived with them.
   const bookings = await listUserBookings(id, doc.email, Boolean(doc.archivedAt));
-  const todayIso = toIso(new Date());
+  const todayIso = arizonaTodayIso();
 
   return {
     user: {

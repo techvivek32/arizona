@@ -220,10 +220,18 @@ export default function ChatApp({
     });
   }, []);
 
+  // How far each chat has been loaded. A ref, not state: the poll timer keeps
+  // the loadThread it started with, and state read there would be stale — every
+  // poll would then fetch the whole thread again instead of what's new.
+  const loadedUpTo = useRef<Record<string, string>>({});
+  const loading = useRef<Set<string>>(new Set());
+
   const loadThread = useCallback(
     async (id: string) => {
-      const current = threads[id];
-      const after = current?.loaded ? current.after : null;
+      // One request per chat at a time: a slow reply can't pile polls up.
+      if (loading.current.has(id)) return;
+      loading.current.add(id);
+      const after = loadedUpTo.current[id] ?? null;
       try {
         const response = await fetch(`${api}/${id}${after ? `?after=${encodeURIComponent(after)}` : ""}`, { cache: "no-store" });
         if (!response.ok) return;
@@ -240,12 +248,15 @@ export default function ChatApp({
           const messages = [...byId.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
           return { ...all, [id]: { messages, after: data.now, loaded: true } };
         });
+        loadedUpTo.current[id] = data.now;
         upsertConversation(data.conversation);
       } catch {
         /* the next poll tries again */
+      } finally {
+        loading.current.delete(id);
       }
     },
-    [api, threads, upsertConversation],
+    [api, upsertConversation],
   );
 
   const loadList = useCallback(async () => {
