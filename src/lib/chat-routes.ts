@@ -1,3 +1,4 @@
+import { safeError } from "./log";
 import { NextResponse } from "next/server";
 import { ForbiddenError, getCurrentAdmin, getCurrentUser, UnauthorizedError } from "./auth";
 import { ChatError, type ChatRole } from "./chat";
@@ -44,7 +45,7 @@ export async function chatRoute(request: Request, handler: () => Promise<NextRes
       return NextResponse.json({ error: "Admins can read chats but not write in them" }, { status: 403 });
     }
     if (error instanceof ChatError) return NextResponse.json({ error: error.message }, { status: 400 });
-    console.error("chat route failed", error);
+    console.error("chat route failed", safeError(error));
     return NextResponse.json({ error: "Something went wrong — please try again." }, { status: 500 });
   }
 }

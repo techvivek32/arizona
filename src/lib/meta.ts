@@ -1,3 +1,4 @@
+import { safeError } from "./log";
 /**
  * Server-side Meta Conversions API.
  *
@@ -86,6 +87,24 @@ export function cleanSourceUrl(raw: string | null | undefined): string | undefin
   }
 }
 
+/**
+ * The same pages the browser pixel stays off (components/analytics/track.ts):
+ * appointment links, My bookings, admin, articles, a reschedule, and sign-in
+ * pages on their way to an appointment. A server event started from one of
+ * them isn't sent either.
+ */
+export function fromPrivatePage(referer: string | null | undefined): boolean {
+  if (!referer) return false;
+  try {
+    const { pathname, search } = new URL(referer);
+    if (/^\/(appointment|my-bookings|admin|blog)(\/|$)/.test(pathname)) return true;
+    if (/^\/(login|register)$/.test(pathname) && /appointment/i.test(decodeURIComponent(search))) return true;
+    return pathname === "/book" && /[?&]reschedule=/.test(search);
+  } catch {
+    return false;
+  }
+}
+
 function clientIp(request: Request): string | undefined {
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0]?.trim() || undefined;
@@ -171,6 +190,6 @@ export async function sendServerEvent(
       console.error("meta capi rejected", eventName, response.status, await response.text());
     }
   } catch (error) {
-    console.error("meta capi failed", eventName, error);
+    console.error("meta capi failed", eventName, safeError(error));
   }
 }

@@ -1,3 +1,4 @@
+import { MAX_REQUEST_BYTES } from "@/lib/upload-limits";
 import { crossSiteBlocked } from "@/lib/csrf";
 import { NextResponse } from "next/server";
 import { BadPhotoError, deletePhoto, savePhoto } from "@/lib/intake-files";
@@ -40,9 +41,10 @@ export async function POST(request: Request, ctx: Ctx) {
     );
   }
 
-  // Three phone photos, already shrunk in the browser, fit well under this.
+  // Three phone photos, already shrunk in the browser, fit well under this
+  // (it is also the most Vercel accepts in one request).
   const length = Number(request.headers.get("content-length") ?? 0);
-  if (length > 20 * 1024 * 1024) {
+  if (length > MAX_REQUEST_BYTES) {
     return NextResponse.json({ error: "Those photos are too large" }, { status: 413 });
   }
 

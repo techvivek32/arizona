@@ -1,3 +1,4 @@
+import { safeError } from "@/lib/log";
 import { isEmailAddress } from "@/lib/email-address";
 import { crossSiteBlocked } from "@/lib/csrf";
 import { cleanPhone } from "@/lib/phone";
@@ -8,7 +9,7 @@ import { manageToken } from "@/lib/booking-links";
 import { isLang } from "@/lib/i18n";
 import { getBookableProviders } from "@/lib/providers";
 import { patientView } from "@/lib/models";
-import { sendServerEvent } from "@/lib/meta";
+import { fromPrivatePage, sendServerEvent } from "@/lib/meta";
 import { isEmailVerified } from "@/lib/otp";
 import { sendCancellation, sendConfirmation } from "@/lib/appointment-emails";
 import { clientIp, limited } from "@/lib/rate-limit";
@@ -165,8 +166,10 @@ export async function POST(request: Request) {
     // Server-side truth: this is the only place a booking is provably real.
     // Deliberately sent with no reason, service, patient detail or user id —
     // just "a booking happened", tied to the browser event by eventId.
+    // Not for a reschedule, or from a page the pixel stays off — the browser
+    // sends nothing there either.
     const eventId = str(body.eventId, 64);
-    if (eventId) {
+    if (eventId && !moving && !fromPrivatePage(request.headers.get("referer"))) {
       await sendServerEvent(request, "Schedule", {
         eventId,
         sourceUrl: request.headers.get("referer") ?? undefined,
@@ -200,7 +203,7 @@ export async function POST(request: Request) {
     if (error instanceof SlotUnavailableError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }
-    console.error("booking failed", error);
+    console.error("booking failed", safeError(error));
     return NextResponse.json({ error: "Could not save the booking" }, { status: 500 });
   }
 }

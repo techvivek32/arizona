@@ -1,3 +1,4 @@
+import { safeError } from "@/lib/log";
 import { NextResponse } from "next/server";
 import { getAvailability, loadProviders, providersForReason } from "@/lib/repo";
 import { getBookableProviders } from "@/lib/providers";
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
     });
     return NextResponse.json({ days: days_ });
   } catch (error) {
-    console.error("availability failed", error);
+    console.error("availability failed", safeError(error));
     return NextResponse.json({ error: "Could not load availability" }, { status: 503 });
   }
 }

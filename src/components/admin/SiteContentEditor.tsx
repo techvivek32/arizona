@@ -1,5 +1,6 @@
 "use client";
 
+import { MAX_FILE_BYTES, shrinkImage } from "@/lib/upload-limits";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -494,12 +495,18 @@ function ImageField({
     setUploading(true);
     onError("");
     try {
+      // Big camera files are made smaller here (2400px across keeps them sharp on the site).
+      const picture = await shrinkImage(file, 2400, 3 * 1024 * 1024, 0.88);
+      if (picture.size > MAX_FILE_BYTES) {
+        onError("That picture is too large (4 MB max) — please use a smaller one.");
+        return;
+      }
       const body = new FormData();
-      body.set("image", file);
+      body.set("image", picture);
       const response = await fetch("/api/admin/site/images", { method: "POST", body });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        onError(data.error ?? "Could not upload the picture");
+        onError(response.status === 413 ? "That picture is too large (4 MB max)." : (data.error ?? "Could not upload the picture"));
         return;
       }
       onChange({ ...image, photo: null, url: data.url, alt: "", position: "50% 50%" });

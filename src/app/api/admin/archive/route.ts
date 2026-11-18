@@ -17,8 +17,13 @@ export const GET = adminRoute(async () => NextResponse.json(await listArchive())
  */
 export const POST = adminRoute(async (request) => {
   const body = await readJson<{ kind?: unknown; action?: unknown; ids?: unknown }>(request);
-  const ids = Array.isArray(body.ids) ? body.ids.filter((id): id is string => typeof id === "string").slice(0, 500) : [];
+  const ids = Array.isArray(body.ids) ? body.ids.filter((id): id is string => typeof id === "string") : [];
   if (!ids.length) return NextResponse.json({ error: "Select at least one" }, { status: 400 });
+  // Each one is several database steps; keep a request well inside the time limit.
+  const most = body.kind === "patients" ? 50 : 200;
+  if (ids.length > most) {
+    return NextResponse.json({ error: `Up to ${most} at a time, please — select fewer and repeat.` }, { status: 400 });
+  }
   const admin = await requireAdmin();
   const log = async (action: "booking.restore" | "booking.purge" | "patient.restore" | "patient.purge", done: string[]) => {
     const type = action.startsWith("booking") ? "booking" : "patient";
@@ -41,8 +46,7 @@ export const POST = adminRoute(async (request) => {
     return NextResponse.json({ ok: true, count: restored.length, restored, skippedBookings });
   }
   if (body.kind === "patients" && body.action === "delete") {
-    const removed = await purgeUsers(ids);
-    for (const id of removed) await deletePatientChats(id);
+    const removed = await purgeUsers(ids, deletePatientChats);
     await log("patient.purge", removed);
     return NextResponse.json({ ok: true, count: removed.length });
   }

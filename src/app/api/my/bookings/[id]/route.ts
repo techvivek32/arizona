@@ -1,3 +1,4 @@
+import { safeError } from "@/lib/log";
 import { crossSiteBlocked } from "@/lib/csrf";
 import { NextResponse } from "next/server";
 import { patientView } from "@/lib/models";
@@ -41,7 +42,7 @@ export async function PATCH(request: Request, ctx: Ctx) {
     if (error instanceof BookingInPastError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }
-    console.error("cancel failed", error);
+    console.error("cancel failed", safeError(error));
     return NextResponse.json({ error: "Could not cancel the booking" }, { status: 503 });
   }
 }

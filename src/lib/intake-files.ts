@@ -1,3 +1,4 @@
+import { MAX_FILE_BYTES } from "./upload-limits";
 import { GridFSBucket, ObjectId } from "mongodb";
 import { getDb } from "./db";
 
@@ -8,7 +9,7 @@ import { getDb } from "./db";
  * access controls (and its BAA, if the database host signs one).
  */
 
-const MAX_BYTES = 6 * 1024 * 1024;
+const MAX_BYTES = MAX_FILE_BYTES;
 const TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
 
 async function bucket() {
@@ -22,13 +23,16 @@ export class BadPhotoError extends Error {
   }
 }
 
+const HEIF_BRANDS = new Set(["heic", "heix", "hevc", "hevx", "heim", "heis", "hevm", "hevs", "mif1", "msf1"]);
+
 /** The file's own first bytes must match an image format, whatever it claims to be. */
 function looksLikeImage(data: Buffer): boolean {
   if (data.length < 12) return false;
   if (data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return true; // JPEG
   if (data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return true; // PNG
   if (data.toString("latin1", 0, 4) === "RIFF" && data.toString("latin1", 8, 12) === "WEBP") return true; // WebP
-  if (data.toString("latin1", 4, 8) === "ftyp") return true; // HEIC / HEIF
+  // HEIC / HEIF: an ISO box with a HEIF brand (an MP4 or MOV video has "ftyp" too).
+  if (data.toString("latin1", 4, 8) === "ftyp" && HEIF_BRANDS.has(data.toString("latin1", 8, 12))) return true;
   return false;
 }
 

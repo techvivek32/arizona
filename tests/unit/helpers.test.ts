@@ -6,6 +6,8 @@ import { cleanPhone, phoneCountries, phoneHref } from "@/lib/phone";
 import { selfPayLine } from "@/lib/site";
 import { isEmailAddress } from "@/lib/email-address";
 import { sessionSecret } from "@/lib/secret";
+import { safeError } from "@/lib/log";
+import { fromPrivatePage } from "@/lib/meta";
 import { googleTagAllowedOn, reportBookingConversion } from "@/components/analytics/google";
 import { isPrivateLocation } from "@/components/analytics/track";
 import assert from "node:assert/strict";
@@ -169,6 +171,19 @@ describe("insurance picker", () => {
     assert.deepEqual(plansFor("Velocity"), ["Auto", "PPO", "Workers Comp"]);
     assert.equal(acceptedNetworks.length, 11);
     assert.equal(new Set(carriers.map((carrier) => carrier.name)).size, carriers.length, "no carrier twice");
+  });
+});
+
+describe("logging and small guards", () => {
+  it("logs errors without emails, phone numbers or duplicate-key values", () => {
+    const error = Object.assign(new Error('E11000 duplicate key error dup key: { email: "jane.doe@example.com" } call (623) 555-0199'), { code: 11000 });
+    const line = safeError(error);
+    assert.ok(line.startsWith("Error (11000):"), line);
+    assert.ok(!line.includes("jane.doe@example.com") && !line.includes("555-0199"), line);
+  });
+  it("knows which pages the ad pixel stays off, for server events too", () => {
+    for (const url of ["https://x.com/appointment/abc", "https://x.com/my-bookings", "https://x.com/book?reschedule=t", "https://x.com/register?next=%2Fappointment%2Fabc", "https://x.com/blog/a"]) assert.ok(fromPrivatePage(url), url);
+    for (const url of ["https://x.com/", "https://x.com/book", "https://x.com/register", undefined]) assert.ok(!fromPrivatePage(url), String(url));
   });
 });
 

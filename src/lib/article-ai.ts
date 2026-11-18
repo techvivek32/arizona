@@ -119,7 +119,7 @@ export function cleanTopicInput(input: unknown): TopicInput {
   const title = text(body.title, "Topic", 140, true);
   const focusKeyword = text(body.focusKeyword, "Focus keyword", LIMITS.focusKeyword, true);
   if (topicWords(focusKeyword).length === 0) throw new TopicError("The focus keyword needs real words");
-  if (typeof body.category !== "string" || !(body.category in TOPIC_CATEGORIES)) throw new TopicError("Choose a category");
+  if (typeof body.category !== "string" || !Object.hasOwn(TOPIC_CATEGORIES, body.category)) throw new TopicError("Choose a category");
   const location = TOPIC_LOCATIONS.find((place) => place === body.location) ?? null;
   return { title, focusKeyword, category: body.category as TopicCategory, location, notes: text(body.notes, "Notes", 400, false) };
 }

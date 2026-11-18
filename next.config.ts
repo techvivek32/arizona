@@ -42,7 +42,12 @@ const nextConfig: NextConfig = {
         : []),
       ...privatePaths.map((source) => ({
         source,
-        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+        headers: [
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+          // An appointment address is a private link: never pass it on as a
+          // referrer, not even to this site's own pages (where a tag could read it).
+          { key: "Referrer-Policy", value: "no-referrer" },
+        ],
       })),
     ];
   },

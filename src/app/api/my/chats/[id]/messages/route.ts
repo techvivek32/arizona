@@ -1,3 +1,4 @@
+import { MAX_REQUEST_BYTES } from "@/lib/upload-limits";
 import { NextResponse } from "next/server";
 import { sendMessage } from "@/lib/chat-repo";
 import { chatRoute, notFound, patientCaller, writer } from "@/lib/chat-routes";
@@ -13,7 +14,7 @@ export async function POST(request: Request, ctx: Ctx) {
     const caller = writer(await patientCaller());
     const blocked = await limited([{ key: `chat-send:${caller.userId}`, limit: 30, windowSeconds: 60 }], "You're sending messages very quickly — please wait a moment.");
     if (blocked) return blocked;
-    if (Number(request.headers.get("content-length") ?? 0) > 8 * 1024 * 1024) {
+    if (Number(request.headers.get("content-length") ?? 0) > MAX_REQUEST_BYTES) {
       return NextResponse.json({ error: "That picture is too large (6 MB max)" }, { status: 413 });
     }
     const form = await request.formData().catch(() => null);

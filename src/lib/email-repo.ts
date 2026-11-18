@@ -1,3 +1,4 @@
+import { safeError } from "./log";
 /**
  * Emails from the front desk to a patient, sent through the practice's mail
  * server and kept in `patient_emails` — who sent what, to whom, when, and
@@ -92,7 +93,7 @@ export async function sendPatientEmail(
       html: `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.55;color:#241c20">${escapeHtml(message).replace(/\n/g, "<br>")}</div><p style="margin-top:20px;font-size:13px;color:#5e5357">${escapeHtml(footer)}</p>`,
     });
   } catch (error) {
-    console.error("patient email failed", error);
+    console.error("patient email failed", safeError(error));
     doc.status = "failed";
     doc.error = "The mail server didn't accept it";
   }

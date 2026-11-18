@@ -1,3 +1,4 @@
+import { safeError } from "@/lib/log";
 import type { MetadataRoute } from "next";
 import { listLiveArticles } from "@/lib/articles-repo";
 
@@ -25,7 +26,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }));
   // If the database can't be reached the fixed pages are still listed.
   const articles = await listLiveArticles(1000).catch((error: unknown) => {
-    console.error("sitemap: could not load articles", error);
+    console.error("sitemap: could not load articles", safeError(error));
     return [];
   });
   if (articles.length) {

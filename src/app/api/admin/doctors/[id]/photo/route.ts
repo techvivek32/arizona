@@ -1,3 +1,4 @@
+import { MAX_REQUEST_BYTES } from "@/lib/upload-limits";
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { adminRoute } from "@/lib/api-helpers";
@@ -10,7 +11,7 @@ type Ctx = { params: Promise<{ id: string }> };
 /** POST (multipart, field "photo") — a new headshot. */
 export const POST = adminRoute(async (request, ctx: Ctx) => {
   const { id } = await ctx.params;
-  if (Number(request.headers.get("content-length") ?? 0) > 5 * 1024 * 1024) {
+  if (Number(request.headers.get("content-length") ?? 0) > MAX_REQUEST_BYTES) {
     return NextResponse.json({ error: "That photo is too large (4 MB max)" }, { status: 413 });
   }
   let form: FormData;

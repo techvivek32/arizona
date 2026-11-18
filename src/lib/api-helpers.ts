@@ -1,3 +1,4 @@
+import { safeError } from "./log";
 import { NextResponse } from "next/server";
 import { ForbiddenError, requireAdmin, requireStaff, requireTeam, UnauthorizedError } from "./auth";
 import { crossSiteBlocked } from "./csrf";
@@ -22,7 +23,7 @@ function failure(error: unknown): NextResponse {
     return NextResponse.json({ error: error.message }, { status: 403 });
   }
   // Details go to the server log, never to the browser.
-  console.error("admin route failed", error);
+  console.error("admin route failed", safeError(error));
   return NextResponse.json({ error: "Something went wrong — please try again." }, { status: 500 });
 }
 
@@ -84,7 +85,13 @@ export function staffRoute<T extends unknown[]>(
   };
 }
 
+/** JSON bodies here are small forms; anything bigger is refused before it is read. */
+const MAX_JSON_BYTES = 1024 * 1024;
+
 export async function readJson<T>(request: Request): Promise<T> {
+  if (Number(request.headers.get("content-length") ?? 0) > MAX_JSON_BYTES) {
+    throw new BadRequestError("That request is too large");
+  }
   try {
     return (await request.json()) as T;
   } catch {

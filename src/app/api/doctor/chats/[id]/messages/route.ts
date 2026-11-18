@@ -1,3 +1,4 @@
+import { MAX_REQUEST_BYTES } from "@/lib/upload-limits";
 import { NextResponse } from "next/server";
 import { sendMessage } from "@/lib/chat-repo";
 import { chatRoute, notFound, staffCaller, writer } from "@/lib/chat-routes";
@@ -10,7 +11,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export async function POST(request: Request, ctx: Ctx) {
   return chatRoute(request, async () => {
     const caller = writer(await staffCaller());
-    if (Number(request.headers.get("content-length") ?? 0) > 8 * 1024 * 1024) {
+    if (Number(request.headers.get("content-length") ?? 0) > MAX_REQUEST_BYTES) {
       return NextResponse.json({ error: "That picture is too large (6 MB max)" }, { status: 413 });
     }
     const form = await request.formData().catch(() => null);

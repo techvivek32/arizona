@@ -1,5 +1,6 @@
 "use client";
 
+import { MAX_FILE_BYTES, MAX_REQUEST_BYTES } from "@/lib/upload-limits";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { LanguageToggle, useLang } from "@/components/lang-context";
@@ -173,19 +174,23 @@ export default function CheckInForm({
         body.set(key, String(form[key] ?? ""));
       }
       body.set("attest", attest ? "yes" : "no");
+      let total = 0;
       for (const [key, file] of Object.entries(files)) {
         if (!file) continue;
         const small = await shrink(file);
-        if (small.size > 6 * 1024 * 1024) {
+        total += small.size;
+        // Each photo, and all of them together, must fit in one upload.
+        if (small.size > MAX_FILE_BYTES || total > MAX_REQUEST_BYTES) {
           setError(tr.photoTooBig);
           return;
         }
         body.set(key, small, small === file ? file.name : `${key}.jpg`);
       }
       const response = await fetch(`/api/appointments/${token}/intake`, { method: "POST", body });
-      const data = await response.json();
+      // A request the host refuses as too large has no JSON body.
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setError(data.error ?? tr.serverDown);
+        setError(response.status === 413 ? tr.photoTooBig : (data.error ?? tr.serverDown));
         return;
       }
       setSaved(true);

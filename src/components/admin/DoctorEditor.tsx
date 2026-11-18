@@ -1,5 +1,6 @@
 "use client";
 
+import { MAX_FILE_BYTES, shrinkImage } from "@/lib/upload-limits";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -181,12 +182,17 @@ export default function DoctorEditor({
     setError("");
     setOk("");
     try {
+      const photo = await shrinkImage(file, 1200, 1.5 * 1024 * 1024, 0.88);
+      if (photo.size > MAX_FILE_BYTES) {
+        setError("That photo is too large (4 MB max) — please use a smaller one.");
+        return;
+      }
       const body = new FormData();
-      body.set("photo", file);
+      body.set("photo", photo);
       const response = await fetch(`/api/admin/doctors/${provider.id}/photo`, { method: "POST", body });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setError(data.error ?? "Could not upload the photo");
+        setError(response.status === 413 ? "That photo is too large (4 MB max)." : (data.error ?? "Could not upload the photo"));
         return;
       }
       setProvider(data.provider);

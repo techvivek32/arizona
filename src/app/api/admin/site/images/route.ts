@@ -1,3 +1,4 @@
+import { MAX_REQUEST_BYTES } from "@/lib/upload-limits";
 import { NextResponse } from "next/server";
 import { teamRoute } from "@/lib/api-helpers";
 import { SiteContentError, uploadSiteImage } from "@/lib/repo";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
  * office card. It goes live only when the content is saved with its URL.
  */
 export const POST = teamRoute(async (request) => {
-  if (Number(request.headers.get("content-length") ?? 0) > 9 * 1024 * 1024) {
+  if (Number(request.headers.get("content-length") ?? 0) > MAX_REQUEST_BYTES) {
     return NextResponse.json({ error: "That picture is too large (8 MB max)" }, { status: 413 });
   }
   let form: FormData;

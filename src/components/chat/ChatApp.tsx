@@ -1,5 +1,6 @@
 "use client";
 
+import { shrinkImage } from "@/lib/upload-limits";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ProviderAvatar from "@/components/site/ProviderAvatar";
@@ -104,21 +105,7 @@ type Pending = { tempId: string; text: string; file: File | null; preview: strin
 type Thread = { messages: ChatMessage[]; after: string | null; loaded: boolean };
 
 /** Phone photos are big: send at most 1600px, as JPEG, like the check-in form. */
-async function shrink(file: File): Promise<File> {
-  try {
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
-    if (scale === 1 && file.size < 1.5 * 1024 * 1024 && file.type !== "image/heic") return file;
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
-    canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
-    return blob ? new File([blob], "photo.jpg", { type: "image/jpeg" }) : file;
-  } catch {
-    return file;
-  }
-}
+const shrink = (file: File) => shrinkImage(file, 1600, 1.5 * 1024 * 1024, 0.85);
 
 function initialsOf(name: string): string {
   return (
@@ -361,6 +348,7 @@ export default function ChatApp({
     try {
       const response = await fetch(`${api}/${conversationId}/messages`, { method: "POST", body });
       const data = await response.json().catch(() => ({}));
+      if (response.status === 413) throw new Error("That picture is too large (4 MB max)");
       if (!response.ok) throw new Error(data.error ?? w.serverDown);
       const message = data.message as ChatMessage;
       setThreads((all) => {

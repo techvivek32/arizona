@@ -11,6 +11,8 @@
  * text ever goes into an email.
  */
 import { GridFSBucket, MongoServerError, ObjectId } from "mongodb";
+import { after } from "next/server";
+import { MAX_FILE_BYTES } from "./upload-limits";
 import { siteUrl } from "./booking-links";
 import {
   ChatError,
@@ -25,7 +27,7 @@ import { ensureIndexes, getDb } from "./db";
 import { sendMail } from "./mail";
 import type { User } from "./models";
 import { getAllProviders } from "./providers";
-import { listAdmins, loadProviders, looksLikeImage } from "./repo";
+import { archivedUserIds, listAdmins, loadProviders, looksLikeImage } from "./repo";
 import { providerById } from "./scheduling";
 import { site } from "./site";
 
@@ -59,7 +61,7 @@ type MessageDoc = {
 };
 
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-const MAX_IMAGE = 6 * 1024 * 1024;
+const MAX_IMAGE = MAX_FILE_BYTES;
 /** Emails go out at most this often per chat and side, and not while they're online. */
 const NOTIFY_EVERY_MS = 15 * 60_000;
 const NOTIFY_IF_AWAY_MS = 2 * 60_000;
@@ -177,7 +179,12 @@ export async function listPatientConversations(userId: string): Promise<ChatConv
 export async function listStaffConversations(viewer: "provider" | "admin", providerId: string | null): Promise<ChatConversation[]> {
   await loadProviders();
   const { conversations } = await db();
-  const filter = viewer === "provider" ? { providerId: providerId ?? "", lastMessageAt: { $ne: null } } : { lastMessageAt: { $ne: null } };
+  // A provider doesn't see (or write to) patients deleted to the Archive;
+  // admins still can, for the practice's record.
+  const filter =
+    viewer === "provider"
+      ? { providerId: providerId ?? "", lastMessageAt: { $ne: null }, userId: { $nin: await archivedUserIds() } }
+      : { lastMessageAt: { $ne: null } };
   const docs = await conversations.find(filter).sort({ lastMessageAt: -1 }).limit(500).toArray();
   return docs.map((doc) => serializeConversation(doc, viewer));
 }
@@ -195,6 +202,7 @@ async function findFor(id: string, access: ChatAccess): Promise<ConversationDoc 
   if (!doc) return null;
   if (access.viewer === "patient" && doc.userId.toString() !== access.userId) return null;
   if (access.viewer === "provider" && doc.providerId !== access.providerId) return null;
+  if (access.viewer === "provider" && (await archivedUserIds()).some((id) => id.equals(doc.userId))) return null;
   return doc;
 }
 
@@ -233,7 +241,7 @@ export async function readConversation(id: string, access: ChatAccess, after: st
 
 async function storeImage(file: File, conversationId: ObjectId): Promise<{ fileId: ObjectId; contentType: string }> {
   if (!IMAGE_TYPES.has(file.type)) throw new ChatError("Send a JPEG, PNG or WebP picture");
-  if (file.size > MAX_IMAGE) throw new ChatError("That picture is too large (6 MB max)");
+  if (file.size > MAX_IMAGE) throw new ChatError("That picture is too large (4 MB max)");
   const data = Buffer.from(await file.arrayBuffer());
   if (!looksLikeImage(data)) throw new ChatError("That file isn't a picture");
   const { files } = await db();
@@ -291,7 +299,9 @@ export async function sendMessage(
       $inc: { [`unread.${to}`]: 1 },
     },
   );
-  void notify(doc, to, now).catch((error) => console.error("chat notification failed", error));
+  // After the response, but kept alive until done: a plain fire-and-forget
+  // promise can be frozen with the serverless function and never send.
+  after(() => notify(doc, to, now).catch((error) => console.error("chat notification failed", (error as Error).message)));
   return serializeMessage(message, access.viewer);
 }
 
@@ -399,7 +409,20 @@ async function notify(doc: ConversationDoc, to: ChatRole, now: Date): Promise<vo
   }
   const text = [...lines, link, "", `${site.name} · ${site.phone}`].join("\n");
   const html = `<p>${lines.map((line) => line.replace(/&/g, "&amp;").replace(/</g, "&lt;")).join("<br>")}</p><p><a href="${link}">${link}</a></p><p style="color:#5e5357;font-size:13px">${site.name} &middot; ${site.phone}</p>`;
-  for (const email of recipients) await sendMail({ to: email, subject, text, html });
+  let sent = 0;
+  for (const email of recipients) {
+    try {
+      await sendMail({ to: email, subject, text, html });
+      sent += 1;
+    } catch (error) {
+      console.error("chat notification email failed", (error as Error).message);
+    }
+  }
+  // Nothing went out: give the claim back, so the next message can try again
+  // instead of staying silent for 15 minutes.
+  if (recipients.length && !sent) {
+    await conversations.updateOne({ _id: doc._id, [`notifiedAt.${to}`]: now }, { $set: { [`notifiedAt.${to}`]: notified ?? null } });
+  }
 }
 
 

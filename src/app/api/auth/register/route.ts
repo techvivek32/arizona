@@ -1,8 +1,9 @@
+import { safeError } from "@/lib/log";
 import { isEmailAddress } from "@/lib/email-address";
 import { crossSiteBlocked } from "@/lib/csrf";
 import { NextResponse } from "next/server";
 import { createUserSession } from "@/lib/auth";
-import { sendServerEvent } from "@/lib/meta";
+import { fromPrivatePage, sendServerEvent } from "@/lib/meta";
 import { clearCode, isEmailVerified } from "@/lib/otp";
 import { clientIp, limited } from "@/lib/rate-limit";
 import { DuplicateUserError, registerUser } from "@/lib/repo";
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
     // user id — only the fact that a registration completed, tied to the
     // browser event by eventId so Meta counts one, not two.
     const eventId = typeof body.eventId === "string" ? body.eventId.trim().slice(0, 64) : "";
-    if (eventId) {
+    if (eventId && !fromPrivatePage(request.headers.get("referer"))) {
       await sendServerEvent(request, "CompleteRegistration", {
         eventId,
         sourceUrl: request.headers.get("referer") ?? undefined,
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
     if (error instanceof DuplicateUserError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }
-    console.error("register failed", error);
+    console.error("register failed", safeError(error));
     return NextResponse.json({ error: "Could not create your account" }, { status: 503 });
   }
 }

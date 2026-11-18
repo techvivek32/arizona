@@ -20,7 +20,8 @@ export async function GET(request: Request, ctx: Ctx) {
     if (user) access = { viewer: "patient", userId: user.id };
   } else {
     const staff = await getCurrentAdmin().catch(() => null);
-    if (staff) access = staff.role === "admin" ? { viewer: "admin" } : { viewer: "provider", providerId: staff.providerId };
+    // Admins and the front desk monitor chats (read only), the same as in chat-routes.
+    if (staff) access = staff.role === "admin" || staff.role === "staff" ? { viewer: "admin" } : { viewer: "provider", providerId: staff.providerId };
   }
   if (!access) return NextResponse.json({ error: "Sign in first" }, { status: 401 });
   const image = await readChatImage((await ctx.params).id, access);

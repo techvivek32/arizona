@@ -1,3 +1,4 @@
+import { safeError } from "./log";
 import { manageUrl, siteUrl } from "./booking-links";
 import { longDate, t, type Lang } from "./i18n";
 import { sendMail } from "./mail";
@@ -106,7 +107,7 @@ async function deliver(kind: Kind, booking: Booking, lang: Lang, daysAhead = 0):
     await sendMail({ to: booking.patient.email, ...build(kind, booking, lang, daysAhead) });
     return true;
   } catch (error) {
-    console.error(`appointment ${kind} email failed`, booking.id, error);
+    console.error(`appointment ${kind} email failed`, booking.id, safeError(error));
     return false;
   }
 }

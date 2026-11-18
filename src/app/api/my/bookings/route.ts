@@ -1,3 +1,4 @@
+import { safeError } from "@/lib/log";
 import { NextResponse } from "next/server";
 import { getUserSession } from "@/lib/auth";
 import { manageToken } from "@/lib/booking-links";
@@ -17,7 +18,7 @@ export async function GET() {
       bookings: bookings.map((booking) => ({ ...patientView(booking), manageToken: manageToken(booking.id) })),
     });
   } catch (error) {
-    console.error("my bookings failed", error);
+    console.error("my bookings failed", safeError(error));
     return NextResponse.json({ error: "Could not load your bookings" }, { status: 503 });
   }
 }

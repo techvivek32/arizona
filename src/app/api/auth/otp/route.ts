@@ -1,3 +1,4 @@
+import { safeError } from "@/lib/log";
 import { isEmailAddress } from "@/lib/email-address";
 import { crossSiteBlocked } from "@/lib/csrf";
 import { NextResponse } from "next/server";
@@ -86,7 +87,7 @@ export async function POST(request: Request) {
         { status: 429 },
       );
     }
-    console.error("otp send failed", error);
+    console.error("otp send failed", safeError(error));
     return NextResponse.json({ error: "Could not send a code right now" }, { status: 503 });
   }
 }
@@ -132,7 +133,7 @@ export async function PUT(request: Request) {
         return NextResponse.json({ error: "That code isn't right" }, { status: 401 });
     }
   } catch (error) {
-    console.error("otp verify failed", error);
+    console.error("otp verify failed", safeError(error));
     return NextResponse.json({ error: "Could not check the code" }, { status: 503 });
   }
 }

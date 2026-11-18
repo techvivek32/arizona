@@ -1,3 +1,4 @@
+import { safeError } from "@/lib/log";
 import { audit } from "@/lib/audit";
 import { crossSiteBlocked } from "@/lib/csrf";
 import { NextResponse } from "next/server";
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
     await createUserSession(user);
     return NextResponse.json({ user });
   } catch (error) {
-    console.error("sign in failed", error);
+    console.error("sign in failed", safeError(error));
     return NextResponse.json({ error: "Could not reach the database" }, { status: 503 });
   }
 }

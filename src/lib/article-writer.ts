@@ -1,3 +1,4 @@
+import { safeError } from "./log";
 /**
  * The AI article writer: topics, drafts, the daily run and what it cost.
  *
@@ -312,7 +313,9 @@ async function claimTopic(topicId: string | null): Promise<TopicDoc | null> {
 /** Asks Claude for the article. Returns the checked answer and what it used. */
 async function askClaude(context: WriterContext, model: string) {
   // Reads ANTHROPIC_API_KEY (and ANTHROPIC_BASE_URL, used by the tests).
-  const client = new Anthropic({ timeout: 4 * 60_000, maxRetries: 2 });
+  // Two tries of at most 2 minutes fit inside the route's 5-minute limit (maxDuration 300),
+  // so a slow run fails cleanly instead of being killed with its topic still locked.
+  const client = new Anthropic({ timeout: 2 * 60_000, maxRetries: 1 });
   const response = await client.messages.create({
     model,
     max_tokens: 16000,
@@ -472,7 +475,7 @@ export async function generateArticle(request: GenerateRequest): Promise<Generat
     const usageFromError = (error as { usage?: typeof usage }).usage;
     if (usageFromError) usage = usageFromError;
     const message = errorMessage(error);
-    if (!(error instanceof WriterError || error instanceof TopicError)) console.error("article writer failed", error);
+    if (!(error instanceof WriterError || error instanceof TopicError)) console.error("article writer failed", safeError(error));
     const duplicate = error instanceof TopicError && message.startsWith("Already covered");
     await topics.updateOne(
       { _id: topic._id },

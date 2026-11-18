@@ -86,6 +86,12 @@ export function ensureIndexes(): Promise<void> {
       db.collection("slots").createIndex({ date: 1, officeId: 1, providerId: 1 }),
       db.collection("bookings").createIndex({ createdAt: -1 }),
       db.collection("bookings").createIndex({ date: 1, time: 1 }),
+      // Who holds a slot (schedule changes), a provider's own list, and the Archive.
+      db.collection("bookings").createIndex({ slotId: 1, status: 1 }),
+      db.collection("bookings").createIndex({ providerId: 1, date: -1 }),
+      db.collection("bookings").createIndex({ archivedAt: -1 }, { partialFilterExpression: { archivedAt: { $type: "date" } } }),
+      db.collection("bookings").createIndex({ archivedWithUser: 1 }, { partialFilterExpression: { archivedWithUser: { $type: "objectId" } } }),
+      db.collection("users").createIndex({ archivedAt: -1 }, { partialFilterExpression: { archivedAt: { $type: "date" } } }),
       db.collection("plans").createIndex({ order: 1 }),
       db.collection("email_otps").createIndex({ email: 1 }, { unique: true }),
       db.collection("articles").createIndex({ slug: 1 }, { unique: true }),

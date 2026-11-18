@@ -1,4 +1,6 @@
+import { safeError } from "./log";
 import { isEmailAddress } from "./email-address";
+import { MAX_FILE_BYTES } from "./upload-limits";
 import { randomInt } from "node:crypto";
 import { GridFSBucket, ObjectId, type Filter } from "mongodb";
 import { ensureIndexes, getDb } from "./db";
@@ -659,73 +661,53 @@ export type UserRow = User & {
 };
 
 export async function listUserRows(): Promise<UserRow[]> {
-  const { users } = await collections();
+  const { users, bookings } = await collections();
   const todayIso = arizonaTodayIso();
 
-  const rows = await users
-    .aggregate<UserRow & { _id: ObjectId }>([
-      // Archived patients are listed in Admin → Archive instead.
-      { $match: { archivedAt: null } },
-      {
-        // Guest bookings share only the email, so match on either key.
-        $lookup: {
-          from: "bookings",
-          let: { uid: "$_id", mail: "$email" },
-          pipeline: [
-            {
-              $match: {
-                archivedAt: null,
-                purgedAt: null,
-                $expr: {
-                  $or: [{ $eq: ["$userId", "$$uid"] }, { $eq: ["$patient.email", "$$mail"] }],
-                },
-              },
-            },
-            { $project: { status: 1, date: 1 } },
-          ],
-          as: "b",
-        },
-      },
-      {
-        $addFields: {
-          id: { $toString: "$_id" },
-          bookingsTotal: { $size: "$b" },
-          bookingsUpcoming: {
-            $size: {
-              $filter: {
-                input: "$b",
-                as: "x",
-                cond: {
-                  $and: [{ $eq: ["$$x.status", "confirmed"] }, { $gte: ["$$x.date", todayIso] }],
-                },
-              },
-            },
-          },
-          bookingsCancelled: {
-            $size: {
-              $filter: { input: "$b", as: "x", cond: { $eq: ["$$x.status", "cancelled"] } },
-            },
-          },
-          lastBookingDate: { $max: "$b.date" },
-        },
-      },
-      { $project: { b: 0, passwordHash: 0 } },
-      { $sort: { createdAt: -1 } },
-      { $limit: 500 },
-    ])
+  // Two indexed queries instead of a per-patient lookup over every booking:
+  // the newest 500 patients (archived ones are in Admin → Archive), then their
+  // bookings by account or by email (guest bookings share only the email).
+  const docs = await users
+    .find({ archivedAt: null }, { projection: { passwordHash: 0 } })
+    .sort({ createdAt: -1 })
+    .limit(500)
     .toArray();
+  const theirs = docs.length
+    ? await bookings
+        .find(
+          { ...LIVE_BOOKING, $or: [{ userId: { $in: docs.map((doc) => doc._id) } }, { "patient.email": { $in: docs.map((doc) => doc.email) } }] },
+          { projection: { userId: 1, "patient.email": 1, status: 1, date: 1 } },
+        )
+        .toArray()
+    : [];
+  const byUser = new Map<string, Map<string, { status: BookingStatus; date: string }>>();
+  const add = (key: string, booking: (typeof theirs)[number]) => {
+    const list = byUser.get(key) ?? new Map();
+    list.set(booking._id.toString(), { status: booking.status, date: booking.date });
+    byUser.set(key, list);
+  };
+  const idByEmail = new Map(docs.map((doc) => [doc.email, doc._id.toString()]));
+  for (const booking of theirs) {
+    if (booking.userId) add(booking.userId.toString(), booking);
+    const owner = idByEmail.get(booking.patient?.email ?? "");
+    if (owner) add(owner, booking);
+  }
 
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    email: row.email,
-    createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : "",
-    lastLoginAt: row.lastLoginAt ? new Date(row.lastLoginAt).toISOString() : null,
-    bookingsTotal: row.bookingsTotal,
-    bookingsUpcoming: row.bookingsUpcoming,
-    bookingsCancelled: row.bookingsCancelled,
-    lastBookingDate: row.lastBookingDate ?? null,
-  }));
+  return docs.map((doc) => {
+    const own = [...(byUser.get(doc._id.toString())?.values() ?? [])];
+    const dates = own.map((booking) => booking.date).sort();
+    return {
+      id: doc._id.toString(),
+      name: doc.name,
+      email: doc.email,
+      createdAt: doc.createdAt ? new Date(doc.createdAt).toISOString() : "",
+      lastLoginAt: doc.lastLoginAt ? new Date(doc.lastLoginAt).toISOString() : null,
+      bookingsTotal: own.length,
+      bookingsUpcoming: own.filter((booking) => booking.status === "confirmed" && booking.date >= todayIso).length,
+      bookingsCancelled: own.filter((booking) => booking.status === "cancelled").length,
+      lastBookingDate: dates[dates.length - 1] ?? null,
+    };
+  });
 }
 
 export async function getUserDetail(
@@ -1598,7 +1580,7 @@ export async function getOfficeHours(): Promise<OfficeHours | null> {
       ]),
     ) as OfficeHours;
   } catch (error) {
-    console.error("office hours unavailable", error);
+    console.error("office hours unavailable", safeError(error));
     return null;
   }
 }
@@ -1752,7 +1734,7 @@ export async function getAvailability(
 ): Promise<DayAvailability[]> {
   // Weeks in view that have no plan yet follow the fixed schedule.
   await fillWeeksFromMaster(addDays(startIso, days - 1)).catch((error) =>
-    console.error("could not fill weeks from the fixed schedule", error),
+    console.error("could not fill weeks from the fixed schedule", safeError(error)),
   );
   const { slots } = await collections();
   const todayIso = arizonaTodayIso();
@@ -2070,6 +2052,12 @@ export async function countUpcomingBookings(email: string): Promise<number> {
   });
 }
 
+/** Patients in Admin → Archive — their chats are hidden from providers. */
+export async function archivedUserIds(): Promise<ObjectId[]> {
+  const { users } = await collections();
+  return (await users.find({ archivedAt: { $ne: null } }, { projection: { _id: 1 } }).toArray()).map((doc) => doc._id);
+}
+
 /** The account that owns this email, if any — guest bookings attach to it. */
 export async function userIdByEmail(email: string): Promise<string | null> {
   const { users } = await collections();
@@ -2242,17 +2230,25 @@ export async function listArchive(): Promise<{ bookings: Booking[]; patients: Ar
     bookings.find(ARCHIVED_BOOKING).sort({ archivedAt: -1 }).limit(1000).toArray(),
     users.find({ archivedAt: { $ne: null } }).sort({ archivedAt: -1 }).limit(1000).toArray(),
   ]);
-  const patients = await Promise.all(
-    userDocs.map(async (doc) => ({
-      id: doc._id.toString(),
-      name: doc.name,
-      email: doc.email,
-      createdAt: doc.createdAt?.toISOString() ?? "",
-      archivedAt: doc.archivedAt?.toISOString() ?? "",
-      archivedBy: doc.archivedBy ?? null,
-      bookings: await bookings.countDocuments({ ...ARCHIVED_BOOKING, archivedWithUser: doc._id }),
-    })),
-  );
+  // One grouped count for every archived patient, not one query each.
+  const counts = userDocs.length
+    ? await bookings
+        .aggregate<{ _id: ObjectId; n: number }>([
+          { $match: { ...ARCHIVED_BOOKING, archivedWithUser: { $in: userDocs.map((doc) => doc._id) } } },
+          { $group: { _id: "$archivedWithUser", n: { $sum: 1 } } },
+        ])
+        .toArray()
+    : [];
+  const countOf = new Map(counts.map((row) => [row._id.toString(), row.n]));
+  const patients = userDocs.map((doc) => ({
+    id: doc._id.toString(),
+    name: doc.name,
+    email: doc.email,
+    createdAt: doc.createdAt?.toISOString() ?? "",
+    archivedAt: doc.archivedAt?.toISOString() ?? "",
+    archivedBy: doc.archivedBy ?? null,
+    bookings: countOf.get(doc._id.toString()) ?? 0,
+  }));
   return { bookings: bookingDocs.map(serializeBooking), patients };
 }
 
@@ -2305,6 +2301,7 @@ async function purgeBookingDoc(doc: BookingDoc): Promise<boolean> {
 
 /** Only archived bookings can be deleted for good. Returns the ids that were. */
 export async function purgeBookings(ids: string[]): Promise<string[]> {
+  // (The Archive route sends at most 200 at a time — see api/admin/archive.)
   const { bookings } = await collections();
   const docs = await bookings.find({ _id: { $in: objectIds(ids) }, ...ARCHIVED_BOOKING }).toArray();
   const purged: string[] = [];
@@ -2336,7 +2333,7 @@ export async function restoreUsers(ids: string[]): Promise<{ restored: string[];
  * booking of theirs (erased as in purgeBookingDoc, so the dashboard keeps its
  * numbers). Returns the ids removed — the caller erases their chats.
  */
-export async function purgeUsers(ids: string[]): Promise<string[]> {
+export async function purgeUsers(ids: string[], beforeRemoving?: (userId: string) => Promise<unknown>): Promise<string[]> {
   const { users, bookings } = await collections();
   const docs = await users.find({ _id: { $in: objectIds(ids) }, archivedAt: { $ne: null } }).toArray();
   const db = await getDb();
@@ -2352,6 +2349,9 @@ export async function purgeUsers(ids: string[]): Promise<string[]> {
     // email, or one restored on its own): kept, just no longer tied to the account.
     await bookings.updateMany({ ...LIVE_BOOKING, userId: user._id }, { $set: { userId: null } });
     await db.collection("email_otps").deleteMany({ email: user.email });
+    // Their chats go first: if this stops part-way, the account (and so the
+    // way to erase what's left from the Archive) is still there.
+    if (beforeRemoving) await beforeRemoving(user._id.toString());
     await users.deleteOne({ _id: user._id });
   }
   return docs.map((doc) => doc._id.toString());
@@ -2431,7 +2431,7 @@ function focusPoint(value: unknown, field: string): string {
 function cleanImage(value: unknown, field: string): ImageRef {
   const input = (value ?? {}) as Record<string, unknown>;
   const url = typeof input.url === "string" && SITE_IMAGE_URL.test(input.url) ? input.url : null;
-  const photo = !url && typeof input.photo === "string" && input.photo in photos ? (input.photo as PhotoKey) : null;
+  const photo = !url && typeof input.photo === "string" && Object.hasOwn(photos, input.photo) ? (input.photo as PhotoKey) : null;
   if (!url && !photo) throw new SiteContentError(`${field}: choose a picture`);
   return {
     photo,
@@ -2571,7 +2571,7 @@ export function looksLikeImage(data: Buffer): boolean {
 /** Stores a picture for the hero or an office card; returns its URL. */
 export async function uploadSiteImage(file: File): Promise<string> {
   if (!PHOTO_TYPES.has(file.type)) throw new SiteContentError("Use a JPEG, PNG or WebP picture");
-  if (file.size > 8 * 1024 * 1024) throw new SiteContentError("That picture is too large (8 MB max)");
+  if (file.size > MAX_FILE_BYTES) throw new SiteContentError("That picture is too large (4 MB max)");
   const data = Buffer.from(await file.arrayBuffer());
   if (!looksLikeImage(data)) throw new SiteContentError("That file isn't a picture");
   const db = await getDb();

@@ -1,3 +1,4 @@
+import { safeError } from "@/lib/log";
 import type { Metadata } from "next";
 import Ico from "@/components/site/Ico";
 import InsuranceLink from "@/components/site/InsuranceLink";
@@ -24,7 +25,7 @@ export default async function PricingPage() {
   try {
     prices = await getPlans();
   } catch (error) {
-    console.error("Could not load plans from MongoDB", error);
+    console.error("Could not load plans from MongoDB", safeError(error));
   }
 
   return (

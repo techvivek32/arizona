@@ -32,6 +32,7 @@ import * as phone from "./phone.mjs";
 import * as archive from "./archive.mjs";
 import * as auditLog from "./audit.mjs";
 import * as mfa from "./mfa.mjs";
+import * as hardening from "./hardening.mjs";
 import * as schedule from "./schedule.mjs";
 import * as selfPay from "./self-pay.mjs";
 import * as team from "./team.mjs";
@@ -137,7 +138,7 @@ try {
   mongo = await MongoClient.connect(uri);
   const ctx = { call: client(BASE, mailDir), check, base: BASE, db: mongo.db(DB), mailDir, admin: ADMIN, doctor: DOCTOR, root, fakeAi };
   // Order matters: Doctors & Settings changes the admin's password, so it runs last.
-  for (const suite of [schedule, security, browser, siteContent, bookingButtons, insurance, phone, checkin, chat, team, selfPay, archive, auditLog, articles, articleAi, login, mfa, doctors]) await suite.run(ctx);
+  for (const suite of [schedule, security, browser, siteContent, bookingButtons, insurance, phone, checkin, chat, hardening, team, selfPay, archive, auditLog, articles, articleAi, login, mfa, doctors]) await suite.run(ctx);
 } catch (error) {
   check(`run finished without crashing`, false, error instanceof Error ? error.stack ?? error.message : String(error));
 } finally {
