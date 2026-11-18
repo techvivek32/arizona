@@ -1,7 +1,8 @@
 import { audit } from "@/lib/audit";
 import { crossSiteBlocked } from "@/lib/csrf";
 import { NextResponse } from "next/server";
-import { createSession, destroySession, getSession } from "@/lib/auth";
+import { destroySession, getSession } from "@/lib/auth";
+import { staffPasswordOk } from "@/lib/staff-mfa";
 import { claimAttempt, clientIp, refund } from "@/lib/rate-limit";
 import { authenticateAdmin, staffAccountExists } from "@/lib/repo";
 
@@ -45,9 +46,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Wrong email or password" }, { status: 401 });
     }
     await refund(rules);
-    await createSession(admin);
-    await audit(admin, "staff.signin", { type: "staff", id: admin.id });
-    return NextResponse.json({ admin });
+    // Two-step: a code to their email, unless this browser is remembered.
+    return await staffPasswordOk(admin, { admin });
   } catch (error) {
     console.error("sign in failed", error);
     return NextResponse.json({ error: "Could not reach the database" }, { status: 503 });

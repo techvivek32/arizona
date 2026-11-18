@@ -25,7 +25,34 @@ export function jar() {
   return { cookies: new Map(), ip: `10.${Math.floor(ipCounter / 250) % 250}.${ipCounter % 250}.7` };
 }
 
-export function client(base) {
+/**
+ * Staff sign-ins have a second step (a code by email). The test client does it
+ * the way a person would: reads the code the fake mail server received and
+ * sends it, ticking "remember this computer". The remembered-browser cookie is
+ * then reused for that address, so later sign-ins skip the code — like staff
+ * on their own computer. A jar with `noAutoMfa: true` gets the raw responses
+ * (the MFA suite tests the steps themselves).
+ */
+const remembered = new Map();
+const STAFF_SIGN_IN = new Set(["/api/admin/session", "/api/auth/session"]);
+
+export function client(base, mailDir) {
+  const raw = rawClient(base);
+  return async function call(j, method, url, body, extra = {}) {
+    const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : null;
+    const auto = Boolean(j && !j.noAutoMfa && method === "POST" && STAFF_SIGN_IN.has(url) && email && mailDir);
+    if (auto && remembered.has(email) && !j.cookies.has("aws_trust")) j.cookies.set("aws_trust", remembered.get(email));
+    const before = Date.now();
+    const result = await raw(j, method, url, body, extra);
+    if (!auto || !result.data?.mfa) return result;
+    const { code } = await codeFor(mailDir, email, before - 1000);
+    const done = await raw(j, "POST", "/api/auth/mfa", { code, remember: true }, extra);
+    if (j.cookies.has("aws_trust")) remembered.set(email, j.cookies.get("aws_trust"));
+    return done;
+  };
+}
+
+function rawClient(base) {
   return async function call(j, method, url, body, extra = {}) {
     const headers = { ...extra };
     if (j) {

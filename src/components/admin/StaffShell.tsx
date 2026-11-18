@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { IcoName } from "@/components/site/Ico";
 import { site } from "@/lib/site";
+import IdleLogout from "./IdleLogout";
 import SignOutButton from "./SignOutButton";
 import StaffNav from "./StaffNav";
 
@@ -78,6 +79,7 @@ export default function StaffShell({
 
       <main className="min-w-0 px-5 py-7 lg:px-10 lg:py-9">
         <div className="mx-auto max-w-[1200px]">{children}</div>
+        <IdleLogout />
       </main>
     </div>
   );

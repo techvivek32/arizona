@@ -1,7 +1,8 @@
 import { audit } from "@/lib/audit";
 import { crossSiteBlocked } from "@/lib/csrf";
 import { NextResponse } from "next/server";
-import { createSession, createUserSession, destroyUserSession, getCurrentUser, panelHome } from "@/lib/auth";
+import { createUserSession, destroyUserSession, getCurrentUser } from "@/lib/auth";
+import { staffPasswordOk } from "@/lib/staff-mfa";
 import { claimAttempt, clientIp, refund } from "@/lib/rate-limit";
 import { authenticateAdmin, authenticateUser, staffAccountExists } from "@/lib/repo";
 
@@ -62,12 +63,8 @@ export async function POST(request: Request) {
       const admin = await authenticateAdmin(email, password);
       if (admin) {
         await refund([...rules, ...staffRules]);
-        await createSession(admin);
-        await audit(admin, "staff.signin", { type: "staff", id: admin.id });
-        return NextResponse.json({
-          staff: { role: admin.role },
-          redirect: panelHome(admin.role),
-        });
+        // Two-step: a code to their email, unless this browser is remembered.
+        return await staffPasswordOk(admin);
       }
       await audit(null, "staff.signin_failed", { type: "staff", id: email });
     }

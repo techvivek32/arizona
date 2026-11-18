@@ -19,9 +19,11 @@ export const metadata: Metadata = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string | string[] }>;
+  searchParams: Promise<{ next?: string | string[]; idle?: string }>;
 }) {
-  const raw = (await searchParams).next;
+  const params = await searchParams;
+  const raw = params.next;
+  const idle = params.idle === "1";
   const next = safeNext(Array.isArray(raw) ? (raw[0] ?? null) : (raw ?? null));
   const booking = next.startsWith("/book");
   const chat = next.startsWith("/my-bookings/messages");
@@ -38,6 +40,11 @@ export default async function LoginPage({
             ? "Chats with your provider are private, so they need an account. New here? Register — it takes about a minute."
             : "See your upcoming visits, and cancel or reschedule in a couple of clicks."}
       </p>
+      {idle && (
+        <p role="status" className="mt-4 rounded-lg bg-shell px-3.5 py-2.5 text-[15px] text-plum">
+          You were signed out after 30 minutes without activity, to keep patient information safe.
+        </p>
+      )}
       <AuthForm next={next} />
 
       {booking && (

@@ -24,9 +24,43 @@ export default function AuthForm({ next }: { next: string }) {
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Staff two-step sign-in: after a right password, the code from their email.
+  const [mfa, setMfa] = useState<{ sentTo: string; devCode?: string } | null>(null);
+  const [code, setCode] = useState("");
+  const [remember, setRemember] = useState(false);
+  const [notice, setNotice] = useState("");
 
-  async function onSubmit(event: React.FormEvent) {
+  async function onCode(event: React.FormEvent) {
     event.preventDefault();
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/auth/mfa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, remember }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.error ?? "Something went wrong");
+        if (data.restart) {
+          setMfa(null);
+          setCode("");
+        }
+        return;
+      }
+      router.replace(data.redirect);
+      router.refresh();
+    } catch {
+      setError("Could not reach the server");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onSubmit(event?: React.FormEvent) {
+    event?.preventDefault();
     setBusy(true);
     setError("");
 
@@ -40,6 +74,13 @@ export default function AuthForm({ next }: { next: string }) {
 
       if (!response.ok) {
         setError(data.error ?? "Something went wrong");
+        return;
+      }
+
+      if (data.mfa) {
+        setMfa({ sentTo: data.sentTo, devCode: data.devCode });
+        setCode("");
+        if (mfa) setNotice("We sent a new code.");
         return;
       }
 
@@ -57,6 +98,75 @@ export default function AuthForm({ next }: { next: string }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (mfa) {
+    return (
+      <form onSubmit={onCode} className="mt-6 space-y-4">
+        <p className="rounded-lg bg-sage-soft px-3.5 py-2.5 text-[15px] text-sage-ink">
+          For your security, we emailed a 6-digit code to <strong>{mfa.sentTo}</strong>. It expires in 10 minutes.
+        </p>
+        {mfa.devCode && (
+          <p className="rounded-lg bg-shell px-3.5 py-2.5 text-[14px] text-plum">Development only — code: {mfa.devCode}</p>
+        )}
+        <div>
+          <label className={LABEL} htmlFor="code">
+            Sign-in code
+          </label>
+          <input
+            id="code"
+            required
+            autoFocus
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            pattern="\d{6}"
+            maxLength={6}
+            value={code}
+            onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+            className={`${FIELD} text-center text-[22px] tracking-[0.4em]`}
+            placeholder="••••••"
+          />
+        </div>
+        <label className="flex items-start gap-3 text-[15px] text-plum">
+          <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} className="mt-1 h-4 w-4 accent-[#7c2c3e]" />
+          <span>
+            Remember this computer for 30 days
+            <span className="block text-[13px] text-plum-soft">Only on your own computer — never on a shared front-desk one.</span>
+          </span>
+        </label>
+        {error && (
+          <p role="alert" className="rounded-lg bg-wine-soft px-3 py-2 text-[15px] text-wine-deep">
+            {error}
+          </p>
+        )}
+        {notice && <p className="rounded-lg bg-sage-soft px-3 py-2 text-[15px] text-sage-ink">{notice}</p>}
+        <button
+          type="submit"
+          disabled={busy || code.length !== 6}
+          className="focus-ring min-h-12 w-full rounded-full bg-wine px-6 py-3 text-[16px] font-medium text-white shadow-[0_12px_28px_-14px_rgba(124,44,62,.9)] transition hover:bg-wine-deep active:scale-[0.99] disabled:opacity-60"
+        >
+          {busy ? "Checking…" : "Verify and log in"}
+        </button>
+        <p className="flex flex-wrap justify-between gap-2 text-[15px]">
+          <button type="button" disabled={busy} onClick={() => void onSubmit()} className="focus-ring font-semibold text-wine link-underline">
+            Send a new code
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setMfa(null);
+              setCode("");
+              setError("");
+              setNotice("");
+            }}
+            className="focus-ring text-plum-soft link-underline"
+          >
+            Use a different account
+          </button>
+        </p>
+      </form>
+    );
   }
 
   return (

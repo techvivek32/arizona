@@ -192,6 +192,20 @@ export function accountExistsEmail(): { subject: string; text: string; html: str
   return { subject, text, html };
 }
 
+/** Staff two-step sign-in. Nothing about patients — just the code. */
+export function staffCodeEmail(code: string): { subject: string; text: string; html: string } {
+  const subject = `${code} is your ${site.name} staff sign-in code`;
+  const text = [
+    `Your staff sign-in code is ${code}.`,
+    "",
+    "It expires in 10 minutes. If you didn't just sign in, someone has your password — change it in Settings and tell the practice.",
+    "",
+    `${site.name} · ${site.phone}`,
+  ].join("\n");
+  const html = `<!doctype html><html><body style="margin:0;background:#f7f4f5;padding:32px 16px;font-family:Segoe UI,system-ui,Arial,sans-serif;color:#2c2026"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;margin:0 auto;background:#fff;border:1px solid #ece4e7;border-radius:16px"><tr><td style="padding:28px"><p style="margin:0;font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#7c2c3e">${site.name} &middot; Staff</p><h1 style="margin:12px 0 0;font-size:22px;font-weight:600">Your sign-in code</h1><p style="margin:16px 0 0;font-size:34px;font-weight:700;letter-spacing:.3em;color:#2c2026">${code}</p><p style="margin:16px 0 0;font-size:15px;line-height:1.6;color:#6c5e63">It expires in 10 minutes. If you didn&rsquo;t just sign in, someone has your password &mdash; change it in Settings and tell the practice.</p></td></tr></table></body></html>`;
+  return { subject, text, html };
+}
+
 export function otpEmail(code: string): { subject: string; text: string; html: string } {
   const subject = `${code} is your ${site.name} verification code`;
   const text = [

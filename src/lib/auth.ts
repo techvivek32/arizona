@@ -17,7 +17,12 @@ function sign(payload: string): string {
   return createHmac("sha256", secret()).update(payload).digest("hex");
 }
 
-type Kind = "admin" | "user";
+/**
+ * "admin" and "user" are the two sessions. "mfa" is the short-lived note that
+ * a staff password was right and the emailed code is pending; "trust" marks a
+ * browser a staff member chose to remember, so it skips the code for 30 days.
+ */
+type Kind = "admin" | "user" | "mfa" | "trust";
 
 /**
  * Cookie value: base64url(JSON) + "." + HMAC. The payload names its kind, so
@@ -26,7 +31,7 @@ type Kind = "admin" | "user";
  * browser at once.
  */
 async function issue(kind: Kind, account: { id: string; email: string }, maxAge: number): Promise<string> {
-  const version = (await sessionVersionOf(kind, account.id)) ?? 0;
+  const version = (await sessionVersionOf(kind === "user" ? "user" : "admin", account.id)) ?? 0;
   const payload = Buffer.from(
     JSON.stringify({ typ: kind, id: account.id, email: account.email, v: version, expires: Date.now() + maxAge * 1000 }),
   ).toString("base64url");
@@ -79,6 +84,60 @@ export async function createSession(admin: Pick<Admin, "id" | "email">): Promise
 export async function destroySession(): Promise<void> {
   const jar = await cookies();
   jar.delete(COOKIE);
+}
+
+/* ---------------------------------------- staff two-step sign-in (email code) -- */
+
+const MFA_COOKIE = "aws_mfa";
+const TRUST_COOKIE = "aws_trust";
+const MFA_MAX_AGE = 60 * 10; // the code's lifetime
+const TRUST_MAX_AGE = 60 * 60 * 24 * 30; // "remember this browser"
+
+/** The password was right: remember who, for 10 minutes, while the code is checked. */
+export async function startStaffMfa(admin: Pick<Admin, "id" | "email">): Promise<void> {
+  const jar = await cookies();
+  jar.set(MFA_COOKIE, await issue("mfa", admin, MFA_MAX_AGE), {
+    httpOnly: true,
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: MFA_MAX_AGE,
+  });
+}
+
+/** Whose code is pending in this browser — still the same password (version) as when it started. */
+export async function pendingStaffMfa(): Promise<string | null> {
+  const jar = await cookies();
+  const data = readCookie(jar.get(MFA_COOKIE)?.value, "mfa");
+  if (!data) return null;
+  const version = await sessionVersionOf("admin", data.id);
+  return version !== null && version === data.v ? data.id : null;
+}
+
+export async function endStaffMfa(): Promise<void> {
+  const jar = await cookies();
+  jar.delete(MFA_COOKIE);
+}
+
+/** "Remember this browser": no code here for 30 days, or until the password changes. */
+export async function trustThisBrowser(admin: Pick<Admin, "id" | "email">): Promise<void> {
+  const jar = await cookies();
+  jar.set(TRUST_COOKIE, await issue("trust", admin, TRUST_MAX_AGE), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: TRUST_MAX_AGE,
+  });
+}
+
+/** True when this browser was remembered by this staff account, since its last password change. */
+export async function isTrustedBrowser(adminId: string): Promise<boolean> {
+  const jar = await cookies();
+  const data = readCookie(jar.get(TRUST_COOKIE)?.value, "trust");
+  if (!data || data.id !== adminId) return false;
+  const version = await sessionVersionOf("admin", adminId);
+  return version !== null && version === data.v;
 }
 
 /** Reads and verifies the cookie. Does not hit the database. */
