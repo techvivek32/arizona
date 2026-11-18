@@ -1,3 +1,4 @@
+import { isEmailAddress } from "@/lib/email-address";
 import { crossSiteBlocked } from "@/lib/csrf";
 import { cleanPhone } from "@/lib/phone";
 import { BOOKING_SEX, cleanInsurance } from "@/lib/practice";
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
   if (!/^[a-f\d]{24}$/i.test(slotId)) {
     return NextResponse.json({ error: "Pick an appointment time" }, { status: 400 });
   }
-  if (!email.includes("@") || !firstName || !lastName || !dob || !sex) {
+  if (!isEmailAddress(email.toLowerCase()) || !firstName || !lastName || !dob || !sex) {
     return NextResponse.json({ error: "Please fill in every required field" }, { status: 400 });
   }
   if (sex !== BOOKING_SEX) {

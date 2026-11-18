@@ -1,3 +1,4 @@
+import { isEmailAddress } from "@/lib/email-address";
 import { crossSiteBlocked } from "@/lib/csrf";
 import { NextResponse } from "next/server";
 import { createUserSession } from "@/lib/auth";
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
   const password = typeof body.password === "string" ? body.password : "";
 
   if (!name) return NextResponse.json({ error: "Enter your name" }, { status: 400 });
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+  if (!isEmailAddress(email)) {
     return NextResponse.json({ error: "Enter a valid email" }, { status: 400 });
   }
   if (password.length < 8 || password.length > 256) {

@@ -1,3 +1,4 @@
+import { isEmailAddress } from "@/lib/email-address";
 import { NextResponse } from "next/server";
 import { cleanPhone } from "@/lib/phone";
 import { cleanInsurance } from "@/lib/practice";
@@ -53,7 +54,7 @@ export const POST = staffRoute(async (request, staff) => {
   if (!/^[a-f\d]{24}$/i.test(slotId)) {
     return NextResponse.json({ error: "Pick a time" }, { status: 400 });
   }
-  if (!/^\S+@\S+\.\S+$/.test(email) || !firstName || !lastName || !dob || !sex) {
+  if (!isEmailAddress(email) || !firstName || !lastName || !dob || !sex) {
     return NextResponse.json(
       { error: "Fill in the patient's name, email, date of birth and sex" },
       { status: 400 },

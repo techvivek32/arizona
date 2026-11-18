@@ -1,3 +1,4 @@
+import { isEmailAddress } from "@/lib/email-address";
 import { crossSiteBlocked } from "@/lib/csrf";
 import { NextResponse } from "next/server";
 import { bookingCodeEmail } from "@/lib/appointment-emails";
@@ -9,7 +10,6 @@ import { emailTaken } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
 
-const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 /**
  * POST — send a code. `purpose: "booking"` is the guest-booking check: it is
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   }
 
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase().slice(0, 120) : "";
-  if (!EMAIL.test(email)) {
+  if (!isEmailAddress(email)) {
     return NextResponse.json({ error: "Enter a valid email" }, { status: 400 });
   }
 
@@ -104,7 +104,7 @@ export async function PUT(request: Request) {
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const code = typeof body.code === "string" ? body.code.trim() : "";
 
-  if (!EMAIL.test(email) || !/^\d{6}$/.test(code)) {
+  if (!isEmailAddress(email) || !/^\d{6}$/.test(code)) {
     return NextResponse.json({ error: "Enter the 6-digit code" }, { status: 400 });
   }
 

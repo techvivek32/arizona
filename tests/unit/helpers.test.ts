@@ -4,6 +4,7 @@
  */
 import { cleanPhone, phoneCountries, phoneHref } from "@/lib/phone";
 import { selfPayLine } from "@/lib/site";
+import { isEmailAddress } from "@/lib/email-address";
 import { googleTagAllowedOn, reportBookingConversion } from "@/components/analytics/google";
 import { isPrivateLocation } from "@/components/analytics/track";
 import assert from "node:assert/strict";
@@ -167,6 +168,17 @@ describe("insurance picker", () => {
     assert.deepEqual(plansFor("Velocity"), ["Auto", "PPO", "Workers Comp"]);
     assert.equal(acceptedNetworks.length, 11);
     assert.equal(new Set(carriers.map((carrier) => carrier.name)).size, carriers.length, "no carrier twice");
+  });
+});
+
+describe("email addresses", () => {
+  it("accepts ordinary mailboxes", () => {
+    for (const ok of ["jane@example.com", "jane.doe+book@mail.example.co.uk", "O'Brien@example.org", "a_b-c@sub.example.net"]) assert.ok(isEmailAddress(ok), ok);
+  });
+  it("refuses anything a mail library could send somewhere else", () => {
+    for (const bad of ["victim<attacker@evil.com>", "a,b@x.com", "a;b@x.com", "\"a\"@x.com", "a b@x.com", "a@b@x.com", "x@localhost", "a@-x.com", ".a@x.com", "a..b@x.com", "a@x.c0m", `${"a".repeat(65)}@x.com`]) {
+      assert.ok(!isEmailAddress(bad), bad);
+    }
   });
 });
 

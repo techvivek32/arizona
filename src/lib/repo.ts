@@ -1,3 +1,4 @@
+import { isEmailAddress } from "./email-address";
 import { randomInt } from "node:crypto";
 import { GridFSBucket, ObjectId, type Filter } from "mongodb";
 import { ensureIndexes, getDb } from "./db";
@@ -421,7 +422,6 @@ export class StaffInputError extends Error {
   }
 }
 
-const STAFF_EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 /**
  * A strong password to hand to someone: 16 characters from letters and digits
@@ -452,7 +452,7 @@ export async function setProviderLogin(
   if (!isProviderId(providerId)) throw new StaffInputError("Unknown provider");
   const { admins } = await collections();
   const email = typeof input.email === "string" ? input.email.trim().toLowerCase().slice(0, 120) : "";
-  if (!STAFF_EMAIL.test(email)) throw new StaffInputError("Enter a valid email for the sign-in");
+  if (!isEmailAddress(email)) throw new StaffInputError("Enter a valid email for the sign-in");
 
   const current = await admins.findOne({ role: "provider", providerId });
   const owner = await admins.findOne({ email });
@@ -517,7 +517,7 @@ export async function updateOwnAccount(
     }
   }
   if (changingEmail) {
-    if (!STAFF_EMAIL.test(email)) throw new StaffInputError("Enter a valid email");
+    if (!isEmailAddress(email)) throw new StaffInputError("Enter a valid email");
     if (await admins.findOne({ email, _id: { $ne: doc._id } })) {
       throw new StaffInputError("Another staff account already uses that email");
     }
@@ -543,7 +543,7 @@ export async function createAdminAccount(input: {
 }): Promise<Admin> {
   const role = input.role === "staff" ? "staff" : "admin";
   const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
-  if (!STAFF_EMAIL.test(email)) throw new StaffInputError("Enter a valid email");
+  if (!isEmailAddress(email)) throw new StaffInputError("Enter a valid email");
   const password = staffPassword(input.password);
   try {
     const admin = await createAdmin({ email, password, name: typeof input.name === "string" ? input.name : undefined });
