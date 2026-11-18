@@ -105,6 +105,10 @@ export function ensureIndexes(): Promise<void> {
       db.collection("patient_emails").createIndex({ bookingId: 1, sentAt: -1 }),
       db.collection("patient_emails").createIndex({ sentAt: -1 }),
       db.collection("rate_limits").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+      // Activity log: newest first, by record and by staff member. No TTL — kept.
+      db.collection("audit_log").createIndex({ at: -1 }),
+      db.collection("audit_log").createIndex({ "target.id": 1, at: -1 }),
+      db.collection("audit_log").createIndex({ "actor.id": 1, at: -1 }),
       // Mongo sweeps expired codes an hour after they lapse.
       db.collection("email_otps").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 3600 }),
     ]);

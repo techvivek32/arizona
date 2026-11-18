@@ -16,6 +16,7 @@ const LINKS: StaffLink[] = [
   { href: "/admin/pricing", label: "Pricing", icon: "tag" },
   { href: "/admin/emails", label: "Email", icon: "mail" },
   { href: "/admin/accounts", label: "User accounts", icon: "users" },
+  { href: "/admin/activity", label: "Activity log", icon: "log" },
   { href: "/admin/settings", label: "Settings", icon: "shield" },
   { href: "/admin/archive", label: "Archive", icon: "archive" },
 ];

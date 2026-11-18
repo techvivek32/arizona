@@ -1,3 +1,4 @@
+import { audit } from "@/lib/audit";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import DoctorPanel from "@/components/admin/DoctorPanel";
@@ -14,6 +15,7 @@ export default async function DoctorPage() {
   if (!staff || !isProviderId(staff.providerId)) redirect("/login");
   const provider = providerById(staff.providerId);
   const bookings = await listProviderBookings(staff.providerId);
+  await audit(staff, "bookings.list");
 
   return (
     <div>

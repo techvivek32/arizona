@@ -18,7 +18,12 @@ type RateDoc = { _id: string; count: number; expiresAt: Date };
  *    strict, but never spoofable.
  */
 export function clientIp(request: Request): string {
-  const forwarded = (request.headers.get("x-forwarded-for") ?? "")
+  return ipFromHeaders(request.headers);
+}
+
+/** The same, from a page's headers() (server components have no Request). */
+export function ipFromHeaders(headers: Pick<Headers, "get">): string {
+  const forwarded = (headers.get("x-forwarded-for") ?? "")
     .split(",")
     .map((part) => part.trim())
     .filter(Boolean);

@@ -2303,12 +2303,12 @@ async function purgeBookingDoc(doc: BookingDoc): Promise<boolean> {
   return true;
 }
 
-/** Only archived bookings can be deleted for good. Returns how many were. */
-export async function purgeBookings(ids: string[]): Promise<number> {
+/** Only archived bookings can be deleted for good. Returns the ids that were. */
+export async function purgeBookings(ids: string[]): Promise<string[]> {
   const { bookings } = await collections();
   const docs = await bookings.find({ _id: { $in: objectIds(ids) }, ...ARCHIVED_BOOKING }).toArray();
-  let purged = 0;
-  for (const doc of docs) if (await purgeBookingDoc(doc)) purged += 1;
+  const purged: string[] = [];
+  for (const doc of docs) if (await purgeBookingDoc(doc)) purged.push(doc._id.toString());
   return purged;
 }
 

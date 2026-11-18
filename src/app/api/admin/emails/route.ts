@@ -1,3 +1,4 @@
+import { audit } from "@/lib/audit";
 import { NextResponse } from "next/server";
 import { readJson, teamRoute } from "@/lib/api-helpers";
 import { requireTeam } from "@/lib/auth";
@@ -24,6 +25,7 @@ export const POST = teamRoute(async (request) => {
   try {
     const email = await sendPatientEmail(body, staff);
     if (!email) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+    if (email.bookingId) await audit(staff, "email.send", { type: "booking", id: email.bookingId }, { detail: email.status });
     if (email.status === "failed") {
       return NextResponse.json({ error: "The email couldn't be sent — the mail server didn't accept it. It's noted in the email list.", email }, { status: 502 });
     }

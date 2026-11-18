@@ -1,8 +1,9 @@
+import { audit } from "@/lib/audit";
 import { crossSiteBlocked } from "@/lib/csrf";
 import { NextResponse } from "next/server";
 import { createSession, destroySession, getSession } from "@/lib/auth";
 import { claimAttempt, clientIp, refund } from "@/lib/rate-limit";
-import { authenticateAdmin } from "@/lib/repo";
+import { authenticateAdmin, staffAccountExists } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
 
@@ -38,9 +39,14 @@ export async function POST(request: Request) {
 
   try {
     const admin = await authenticateAdmin(email, password);
-    if (!admin) return NextResponse.json({ error: "Wrong email or password" }, { status: 401 });
+    if (!admin) {
+      // Only real staff accounts: made-up addresses would just fill the log.
+      if (await staffAccountExists(email)) await audit(null, "staff.signin_failed", { type: "staff", id: email });
+      return NextResponse.json({ error: "Wrong email or password" }, { status: 401 });
+    }
     await refund(rules);
     await createSession(admin);
+    await audit(admin, "staff.signin", { type: "staff", id: admin.id });
     return NextResponse.json({ admin });
   } catch (error) {
     console.error("sign in failed", error);

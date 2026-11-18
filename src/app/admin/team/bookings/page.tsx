@@ -1,3 +1,4 @@
+import { audit } from "@/lib/audit";
 import type { Metadata } from "next";
 import BookingsTable from "@/components/admin/BookingsTable";
 import { requireTeamPage } from "@/lib/auth";
@@ -7,8 +8,9 @@ export const metadata: Metadata = { title: "Bookings — Front desk" };
 export const dynamic = "force-dynamic";
 
 export default async function TeamBookingsPage() {
-  await requireTeamPage();
+  const staff = await requireTeamPage();
   const bookings = await listBookings();
+  await audit(staff, "bookings.list");
   return (
     <div>
       <h1 className="font-display text-[1.9rem] font-semibold">Bookings</h1>

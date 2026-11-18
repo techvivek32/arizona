@@ -1,3 +1,4 @@
+import { audit } from "@/lib/audit";
 import { NextResponse } from "next/server";
 import { staffRoute } from "@/lib/api-helpers";
 import { readPhoto } from "@/lib/intake-files";
@@ -22,6 +23,7 @@ export const GET = staffRoute(async (request, staff, ctx: Ctx) => {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
   }
+  await audit(staff, "photo.view", { type: "booking", id: photo.bookingId });
   // ?download=<name> saves the file instead of showing it. The name is cut
   // down to plain letters, numbers and dashes before it goes in the header.
   const wanted = new URL(request.url).searchParams.get("download");

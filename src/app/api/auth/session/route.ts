@@ -1,3 +1,4 @@
+import { audit } from "@/lib/audit";
 import { crossSiteBlocked } from "@/lib/csrf";
 import { NextResponse } from "next/server";
 import { createSession, createUserSession, destroyUserSession, getCurrentUser, panelHome } from "@/lib/auth";
@@ -62,11 +63,13 @@ export async function POST(request: Request) {
       if (admin) {
         await refund([...rules, ...staffRules]);
         await createSession(admin);
+        await audit(admin, "staff.signin", { type: "staff", id: admin.id });
         return NextResponse.json({
           staff: { role: admin.role },
           redirect: panelHome(admin.role),
         });
       }
+      await audit(null, "staff.signin_failed", { type: "staff", id: email });
     }
 
     const user = await authenticateUser(email, password);

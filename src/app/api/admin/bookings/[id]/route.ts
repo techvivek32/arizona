@@ -1,6 +1,7 @@
+import { audit } from "@/lib/audit";
 import { NextResponse } from "next/server";
 import { adminRoute, readJson, teamRoute } from "@/lib/api-helpers";
-import { requireAdmin } from "@/lib/auth";
+import { getCurrentAdmin, requireAdmin } from "@/lib/auth";
 import { archiveBooking, setBookingStatus, SlotUnavailableError } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,7 @@ export const PATCH = teamRoute(async (request, ctx: Ctx) => {
     throw error;
   }
   if (!booking) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+  await audit(await getCurrentAdmin(), "booking.status", { type: "booking", id: booking.id }, { detail: body.status });
   return NextResponse.json({ booking });
 });
 
@@ -37,5 +39,6 @@ export const DELETE = adminRoute(async (_request, ctx: Ctx) => {
   const admin = await requireAdmin();
   const ok = await archiveBooking(id, admin.name || admin.email);
   if (!ok) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+  await audit(admin, "booking.archive", { type: "booking", id });
   return NextResponse.json({ ok: true, archived: true });
 });

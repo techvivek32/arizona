@@ -1,3 +1,4 @@
+import { audit } from "@/lib/audit";
 import { requireAdminPage } from "@/lib/auth";
 import type { Metadata } from "next";
 import UsersTable from "@/components/admin/UsersTable";
@@ -7,8 +8,9 @@ export const metadata: Metadata = { title: "Patients — Admin" };
 export const dynamic = "force-dynamic";
 
 export default async function UsersPage() {
-  await requireAdminPage();
+  const admin = await requireAdminPage();
   const users = await listUserRows();
+  await audit(admin, "patients.list");
 
   return (
     <div>

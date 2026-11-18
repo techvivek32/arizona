@@ -1,3 +1,4 @@
+import { audit } from "@/lib/audit";
 import { requireAdminPage } from "@/lib/auth";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -17,10 +18,11 @@ export default async function UserDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireAdminPage();
+  const admin = await requireAdminPage();
   const { id } = await params;
   const detail = await getUserDetail(id);
   if (!detail) notFound();
+  await audit(admin, "patient.view", { type: "patient", id });
 
   const { user, bookings } = detail;
   const next = bookings.find(
@@ -84,6 +86,10 @@ export default async function UserDetailPage({
           {next.time.toUpperCase()} — {next.reason}
         </p>
       )}
+
+      <Link href={`/admin/activity?target=${user.id}`} className="mt-4 inline-block text-[14px] font-semibold text-wine link-underline">
+        Who has opened or changed this patient →
+      </Link>
 
       <h2 className="mt-8 font-display text-[1.3rem] font-semibold">Their bookings</h2>
       <p className="mt-1 text-[15px] text-plum-soft">

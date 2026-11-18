@@ -1,3 +1,4 @@
+import { audit } from "@/lib/audit";
 import { requireAdminPage } from "@/lib/auth";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -10,11 +11,12 @@ export const dynamic = "force-dynamic";
 
 /** One booking with the patient's pre-visit check-in, for the front desk. */
 export default async function AdminBookingPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdminPage();
+  const admin = await requireAdminPage();
   const { id } = await params;
   // Admins can open an archived booking from the Archive (read only there).
   const booking = await getBookingById(id, { archived: true }).catch(() => null);
   if (!booking) notFound();
+  await audit(admin, "booking.view", { type: "booking", id: booking.id });
   if (booking.archivedAt) {
     return (
       <div>
@@ -30,5 +32,12 @@ export default async function AdminBookingPage({ params }: { params: Promise<{ i
       </div>
     );
   }
-  return <BookingDetail booking={booking} backHref="/admin/bookings" backLabel="All bookings" canEmail />;
+  return (
+    <div>
+      <BookingDetail booking={booking} backHref="/admin/bookings" backLabel="All bookings" canEmail />
+      <Link href={`/admin/activity?target=${booking.id}`} className="mt-6 inline-block text-[14px] font-semibold text-wine link-underline">
+        Who has opened or changed this booking →
+      </Link>
+    </div>
+  );
 }

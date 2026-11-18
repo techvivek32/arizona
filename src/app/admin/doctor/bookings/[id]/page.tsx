@@ -1,3 +1,4 @@
+import { audit } from "@/lib/audit";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import BookingDetail from "@/components/admin/BookingDetail";
@@ -16,5 +17,6 @@ export default async function DoctorBookingPage({ params }: { params: Promise<{ 
   ]);
   // Someone else's patient looks exactly like a missing one.
   if (!booking || !staff || booking.providerId !== staff.providerId) notFound();
+  await audit(staff, "booking.view", { type: "booking", id: booking.id });
   return <BookingDetail booking={booking} backHref="/admin/doctor" backLabel="My appointments" />;
 }

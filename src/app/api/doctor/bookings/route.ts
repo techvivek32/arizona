@@ -1,3 +1,4 @@
+import { audit } from "@/lib/audit";
 import { isEmailAddress } from "@/lib/email-address";
 import { NextResponse } from "next/server";
 import { cleanPhone } from "@/lib/phone";
@@ -91,6 +92,7 @@ export const POST = staffRoute(async (request, staff) => {
       insurance: cleanInsurance(body.insurance),
       patient: { email, firstName, lastName, dob, sex, phone },
     });
+    await audit(staff, "booking.create", { type: "booking", id: booking.id });
     const emailed = await sendConfirmation(booking);
     if (emailed) await markConfirmationSent(booking.id).catch(() => undefined);
     return NextResponse.json({ booking, emailed }, { status: 201 });

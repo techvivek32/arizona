@@ -1,3 +1,4 @@
+import { audit } from "@/lib/audit";
 import { NextResponse } from "next/server";
 import { adminRoute } from "@/lib/api-helpers";
 import { requireAdmin } from "@/lib/auth";
@@ -20,5 +21,6 @@ export const DELETE = adminRoute(async (_request, ctx: Ctx) => {
   const admin = await requireAdmin();
   const result = await archiveUserAccount(id, admin.name || admin.email);
   if (!result) return NextResponse.json({ error: "Patient not found" }, { status: 404 });
+  await audit(admin, "patient.archive", { type: "patient", id }, { detail: `${result.archivedBookings} booking(s)` });
   return NextResponse.json({ ok: true, archived: true, ...result });
 });
