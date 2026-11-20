@@ -91,9 +91,12 @@ function masked(email: string): string {
  * straight away; otherwise a code is emailed and the page asks for it.
  */
 export async function staffPasswordOk(admin: Admin, extra: Record<string, unknown> = {}): Promise<NextResponse> {
-  if (await isTrustedBrowser(admin.id)) {
+  // STAFF_EMAIL_CODE=off turns the emailed code off for every staff login —
+  // only for a practice whose staff accounts don't have real inboxes yet.
+  const codeOff = process.env.STAFF_EMAIL_CODE === "off";
+  if (codeOff || (await isTrustedBrowser(admin.id))) {
     await createSession(admin);
-    await audit(admin, "staff.signin", { type: "staff", id: admin.id }, { detail: "remembered browser" });
+    await audit(admin, "staff.signin", { type: "staff", id: admin.id }, { detail: codeOff ? "password only (email code off)" : "remembered browser" });
     return NextResponse.json({ ...extra, staff: { role: admin.role }, redirect: panelHome(admin.role) });
   }
   let code: string;
